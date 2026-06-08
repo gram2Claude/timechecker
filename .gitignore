@@ -19,3 +19,19 @@ tmp/
 .env
 .env.local
 *.local
+
+# --- Python ---
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# --- timechecker runtime data ---
+*.db
+*.sqlite
+*.sqlite3
+data/
