@@ -1,0 +1,12 @@
+{
+  "plane_project_id": "1208ca9c-1c27-46ef-acea-791f6fb657d2",
+  "plane_identifier": "TIME",
+  "state_map": {
+    "started": "0422610d-0b71-441a-b156-5dd16eaad9d9",
+    "completed": "3cc1ae7e-8328-41aa-a531-466a10f7ca98",
+    "unstarted": "999242ef-e5a5-4d6e-b4f0-434724425916",
+    "backlog": "e0493354-85c8-4d37-b9c5-fc3eaaaf1738",
+    "cancelled": "419e2273-65cc-4f36-8393-1690d269d050"
+  },
+  "published_at": "2026-06-08T19:52:54.183Z"
+}

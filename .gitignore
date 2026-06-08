@@ -1,0 +1,21 @@
+# --- project memory (short-term working memory) ---
+.claude/memory_short/
+
+# --- OS / editor ---
+Thumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# --- logs / temp ---
+*.log
+*.tmp
+tmp/
+.cache/
+
+# --- secrets / env ---
+.env
+.env.local
+*.local

@@ -1,0 +1,744 @@
+{
+  "project": {
+    "name": "timechecker",
+    "slug": "timechecker",
+    "start_date": "2026-06-08",
+    "global_h": 177.75,
+    "global_ai_h": 27,
+    "global_end_date": "2026-07-17",
+    "plane_project_id": "1208ca9c-1c27-46ef-acea-791f6fb657d2",
+    "plane_identifier": "TIME"
+  },
+  "epochs": [
+    {
+      "id": "e1",
+      "order": 1,
+      "name": "E1. Фундамент",
+      "epoch_h": 29.5,
+      "epoch_ai_h": 4,
+      "start_date": "2026-06-08",
+      "end_date": "2026-06-15",
+      "sprints": [
+        {
+          "id": "s1.1",
+          "order": 1,
+          "name": "S1.1 Каркас + конфиг",
+          "sprint_h": 11,
+          "sprint_ai_h": 1.5,
+          "sprint_days": 2,
+          "start_date": "2026-06-08",
+          "end_date": "2026-06-09",
+          "tasks": [
+            {
+              "id": "t1.1.1",
+              "name": "Каркас проекта (uv/pyproject, src/timechecker, ruff+pytest, .env.example)",
+              "done_criteria": "uv sync ставит окружение; пустой пакет импортируется; pytest зелёный на заглушке",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "4561287e-3173-4fe5-b3e4-fc59d66477bb",
+              "plane_identifier": "TIME-1",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t1.1.2",
+              "name": "Конфиг-слой (пути ~/.claude, repo, Plane-creds, маппинг employee↔dev_branch=windows_username)",
+              "done_criteria": "config грузится из файла/env; валидация; маппинг учётка→ветка читается",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "6ddf7e41-9547-487a-a103-4745a60b2df8",
+              "plane_identifier": "TIME-2",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t1.1.3",
+              "name": "CLI-скелет + логирование (entrypoint timechecker, подкоманды collect/report)",
+              "done_criteria": "timechecker --help работает; collect/report заглушки; структурный лог",
+              "realistic_h": 1.5,
+              "pessimistic_h": 3,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 3,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "dd5ae39f-e70a-46e4-931a-7c1b2cb21647",
+              "plane_identifier": "TIME-3",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "cf7497a4-94aa-42bc-93e1-14b52a4667c9"
+        },
+        {
+          "id": "s1.2",
+          "order": 2,
+          "name": "S1.2 Модель данных + хранилище",
+          "sprint_h": 18.5,
+          "sprint_ai_h": 2.5,
+          "sprint_days": 3,
+          "start_date": "2026-06-10",
+          "end_date": "2026-06-15",
+          "tasks": [
+            {
+              "id": "t1.2.1",
+              "name": "Модель данных + SQLite-схема (DDL + ER, таблицы employee/task/activity_event/claude_session/git_commit/plane_transition/daily_*)",
+              "done_criteria": "согласованный DDL применяется; ER в спеке задачи; схема нейтральна к СУБД",
+              "realistic_h": 4,
+              "pessimistic_h": 7,
+              "ai_estimate_h": 1,
+              "estimate_h": 7.25,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "0c4f15c1-0872-406c-a7d3-10ee58b3da75",
+              "plane_identifier": "TIME-4",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t1.2.2",
+              "name": "Repository-интерфейс (DAO абстракция + SQLite-реализация + миграции)",
+              "done_criteria": "интерфейс репозитория покрывает CRUD/upsert; SQLite-реализация; миграции применяются идемпотентно",
+              "realistic_h": 4,
+              "pessimistic_h": 7,
+              "ai_estimate_h": 1,
+              "estimate_h": 7.25,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "0259fd4b-9100-4a66-acc0-05f7a0be9223",
+              "plane_identifier": "TIME-5",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t1.2.3",
+              "name": "Тесты слоя хранилища (CRUD, идемпотентность upsert, фикстуры)",
+              "done_criteria": "pytest зелёный; повторный upsert не плодит дубли",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "1c5b7c97-0199-4890-a306-297ecf32c891",
+              "plane_identifier": "TIME-6",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "7961c2dd-c7a4-4373-b06e-e4597073917d"
+        }
+      ],
+      "plane_module_id": "2fa539c5-1d9d-4c9e-aaff-ff9e73a419af"
+    },
+    {
+      "id": "e2",
+      "order": 2,
+      "name": "E2. Коллекторы (milestone пилота)",
+      "epoch_h": 64.75,
+      "epoch_ai_h": 10,
+      "start_date": "2026-06-16",
+      "end_date": "2026-06-29",
+      "sprints": [
+        {
+          "id": "s2.1",
+          "order": 1,
+          "name": "S2.1 Claude-транскрипты + хуки",
+          "sprint_h": 27.25,
+          "sprint_ai_h": 4.5,
+          "sprint_days": 4,
+          "start_date": "2026-06-16",
+          "end_date": "2026-06-19",
+          "tasks": [
+            {
+              "id": "t2.1.1",
+              "name": "Парсер транскриптов jsonl (~/.claude/projects/**: ts, project, role, tool-calls, tokens — только метаданные)",
+              "done_criteria": "парсер извлекает метаданные из реальных jsonl; тело сообщений не сохраняется",
+              "realistic_h": 5,
+              "pessimistic_h": 9,
+              "ai_estimate_h": 1.5,
+              "estimate_h": 9,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "413012df-ee03-41c3-b6e2-ea4afd87198a",
+              "plane_identifier": "TIME-7",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t2.1.2",
+              "name": "Дериватор claude_session (склейка сообщений в сессии по проекту, границы по gap)",
+              "done_criteria": "сессии корректно собираются; поля started/ended/message_count/tokens заполнены",
+              "realistic_h": 4,
+              "pessimistic_h": 7,
+              "ai_estimate_h": 1,
+              "estimate_h": 7.25,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "5b302cdf-f69c-46a8-b22d-6a3ebf2f46f5",
+              "plane_identifier": "TIME-8",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t2.1.3",
+              "name": "Интеграция хуков сессий (SessionStart/End/Stop → события; учесть уже стоящие хуки памяти)",
+              "done_criteria": "хуки эмитят события сбора, не конфликтуя с memory_short",
+              "realistic_h": 3,
+              "pessimistic_h": 6,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.75,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "473867e5-f01b-431f-b606-058f8a6c2328",
+              "plane_identifier": "TIME-9",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t2.1.4",
+              "name": "Запись Claude-событий в БД (нормализация в activity_event/claude_session, идемпотентность)",
+              "done_criteria": "повторный сбор не дублирует; данные в SQLite сверены с источником",
+              "realistic_h": 3,
+              "pessimistic_h": 5,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.25,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "aee3b1ac-f6aa-4e78-8868-8ceaf135972a",
+              "plane_identifier": "TIME-10",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "7ef34973-a056-42c3-91a5-6e08243055d3"
+        },
+        {
+          "id": "s2.2",
+          "order": 2,
+          "name": "S2.2 Git-коллектор",
+          "sprint_h": 9.75,
+          "sprint_ai_h": 1.5,
+          "sprint_days": 2,
+          "start_date": "2026-06-22",
+          "end_date": "2026-06-23",
+          "tasks": [
+            {
+              "id": "t2.2.1",
+              "name": "Git-коллектор (коммиты dev_branch, парсинг PLANE-ID, метаданные)",
+              "done_criteria": "коммиты ветки читаются; PLANE-ID извлекаются; ts/sha/branch/message собраны",
+              "realistic_h": 3,
+              "pessimistic_h": 6,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.75,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "18d999c0-bee1-4c56-a53d-e6bd426495c4",
+              "plane_identifier": "TIME-11",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t2.2.2",
+              "name": "Запись git_commit в БД + привязка к task по PLANE-ID",
+              "done_criteria": "коммиты в БД; связь commit↔task установлена; идемпотентно",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "4949e377-1251-4fb8-aedb-621a71e92c54",
+              "plane_identifier": "TIME-12",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "6b4b366a-bfe8-41f6-89a4-04404a48800c"
+        },
+        {
+          "id": "s2.3",
+          "order": 3,
+          "name": "S2.3 Plane-коллектор",
+          "sprint_h": 12.5,
+          "sprint_ai_h": 2,
+          "sprint_days": 2,
+          "start_date": "2026-06-24",
+          "end_date": "2026-06-25",
+          "tasks": [
+            {
+              "id": "t2.3.1",
+              "name": "Plane-клиент (REST, чтение issues + переходы статусов In Progress/Done)",
+              "done_criteria": "клиент авторизуется; issues и статус-переходы выгружаются",
+              "realistic_h": 4,
+              "pessimistic_h": 7,
+              "ai_estimate_h": 1,
+              "estimate_h": 7.25,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "bf990d8c-4c42-453a-8e05-9308f79304fe",
+              "plane_identifier": "TIME-13",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t2.3.2",
+              "name": "Запись plane_transition + зеркало task (канон → task)",
+              "done_criteria": "переходы и задачи в БД; estimate_h из канона перенесён",
+              "realistic_h": 3,
+              "pessimistic_h": 5,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.25,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "ebdbeed1-39c9-4508-8f6a-eb33f5725404",
+              "plane_identifier": "TIME-14",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "a88a02b4-0bdb-46ed-8bd3-9d6427d90d2f"
+        },
+        {
+          "id": "s2.4",
+          "order": 4,
+          "name": "S2.4 Оркестрация сбора + приёмка пилота",
+          "sprint_h": 15.25,
+          "sprint_ai_h": 2,
+          "sprint_days": 2,
+          "start_date": "2026-06-26",
+          "end_date": "2026-06-29",
+          "tasks": [
+            {
+              "id": "t2.4.1",
+              "name": "Оркестратор сбора (ingest_run, объединение коллекторов, окно времени, идемпотентность)",
+              "done_criteria": "одна команда collect прогоняет все источники; ingest_run фиксируется",
+              "realistic_h": 4,
+              "pessimistic_h": 7,
+              "ai_estimate_h": 1,
+              "estimate_h": 7.25,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "842ca1f4-1e71-4800-8af9-b50b3da685ca",
+              "plane_identifier": "TIME-15",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t2.4.2",
+              "name": "Планировщик сбора (Task Scheduler под учёткой, периодичность из конфига)",
+              "done_criteria": "сбор запускается по расписанию на учётке сотрудника",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "dcd04abd-510b-4321-b11f-1d3a7f8a3a93",
+              "plane_identifier": "TIME-16",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t2.4.3",
+              "name": "MILESTONE ПИЛОТА: приёмочный прогон — сбор за тестовый день → данные в SQLite",
+              "done_criteria": "за реальный день D-H собраны и записаны в БД; данные провалидированы отчётом",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "qa",
+              "status": "todo",
+              "plane_issue_id": "98de5577-b53d-452c-b703-0fc242d89dbe",
+              "plane_identifier": "TIME-17",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "c8682ecb-b2a6-4006-95f1-5a66c9a71d17"
+        }
+      ],
+      "plane_module_id": "4f10b3ce-9ebf-4ef5-ba27-3eaca4959f8b"
+    },
+    {
+      "id": "e3",
+      "order": 3,
+      "name": "E3. Движок метрик",
+      "epoch_h": 41.25,
+      "epoch_ai_h": 7,
+      "start_date": "2026-06-30",
+      "end_date": "2026-07-08",
+      "sprints": [
+        {
+          "id": "s3.1",
+          "order": 1,
+          "name": "S3.1 Атрибуция время↔задача",
+          "sprint_h": 14.75,
+          "sprint_ai_h": 2.5,
+          "sprint_days": 2,
+          "start_date": "2026-06-30",
+          "end_date": "2026-07-01",
+          "tasks": [
+            {
+              "id": "t3.1.1",
+              "name": "Атрибуция активных сессий к задаче (Claude-сессии + git + Plane In-Progress → task_id)",
+              "done_criteria": "интервалы привязаны к PLANE-ID; конфликты атрибуции разрешаются правилами",
+              "realistic_h": 5,
+              "pessimistic_h": 9,
+              "ai_estimate_h": 1.5,
+              "estimate_h": 9,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "6f214a3c-c3be-4bd8-a85d-acda78e2de76",
+              "plane_identifier": "TIME-18",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t3.1.2",
+              "name": "Метрики 1–2: задачи за день + время на задачу (daily_task_time, факт vs est_h)",
+              "done_criteria": "на тестовый день список задач и active_minutes/задача vs estimate_h",
+              "realistic_h": 3,
+              "pessimistic_h": 6,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.75,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "42d3e58e-8860-48a0-83ba-fa852e8f67ac",
+              "plane_identifier": "TIME-19",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "027afc28-3f51-4367-bbd6-e31dcea600b4"
+        },
+        {
+          "id": "s3.2",
+          "order": 2,
+          "name": "S3.2 Простои и присутствие",
+          "sprint_h": 9.75,
+          "sprint_ai_h": 1.5,
+          "sprint_days": 2,
+          "start_date": "2026-07-02",
+          "end_date": "2026-07-03",
+          "tasks": [
+            {
+              "id": "t3.2.1",
+              "name": "Метрика 3: простои ≥30 мин (разрывы активности → daily_idle)",
+              "done_criteria": "эпизоды ≥30 мин с таймстемпами/длительностью; кол-во и сумма",
+              "realistic_h": 3,
+              "pessimistic_h": 6,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.75,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "1daf6f1b-5fc1-4c9a-889d-01d34e4f603d",
+              "plane_identifier": "TIME-20",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t3.2.2",
+              "name": "Метрики 4–5: span дня + active/gap (daily_summary базовые поля)",
+              "done_criteria": "span (первое/последнее событие) и покрытие активностью посчитаны",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "f922aead-1a70-4df2-b5dc-bf73c00f5cde",
+              "plane_identifier": "TIME-21",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "031ddd9e-07cf-428b-a0a6-70d0efc6b223"
+        },
+        {
+          "id": "s3.3",
+          "order": 3,
+          "name": "S3.3 Продуктивность и план",
+          "sprint_h": 16.75,
+          "sprint_ai_h": 3,
+          "sprint_days": 3,
+          "start_date": "2026-07-06",
+          "end_date": "2026-07-08",
+          "tasks": [
+            {
+              "id": "t3.3.1",
+              "name": "Метрики 6–7: effort-прокси (токены/тул-вызовы на задачу) + фрагментация/переключения",
+              "done_criteria": "на тестовый день effort/задача и число переключений посчитаны",
+              "realistic_h": 3,
+              "pessimistic_h": 6,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.75,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "f60f31d1-3999-4776-8ba4-577663f026d3",
+              "plane_identifier": "TIME-22",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t3.3.2",
+              "name": "Метрики 8–9: adherence (факт vs est_h) + гигиена процесса (скиллы/ветка/доля PLANE-ID)",
+              "done_criteria": "adherence и hygiene_score в daily_summary",
+              "realistic_h": 3,
+              "pessimistic_h": 6,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.75,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "32e48dd9-78e7-4f46-96f5-84c73ee9c797",
+              "plane_identifier": "TIME-23",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t3.3.3",
+              "name": "Тесты движка метрик на фикстурах",
+              "done_criteria": "pytest зелёный; эталонные метрики на синтетических данных совпадают",
+              "realistic_h": 3,
+              "pessimistic_h": 5,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.25,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "139b0cb3-a5d8-4559-bc34-4b0c7b6ecb9e",
+              "plane_identifier": "TIME-24",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "0197b22b-0ef0-4cad-95f2-4afbf5ff4293"
+        }
+      ],
+      "plane_module_id": "f128fbd6-fc3a-49cc-b39a-6f476b1a916e"
+    },
+    {
+      "id": "e4",
+      "order": 4,
+      "name": "E4. Отчётность",
+      "epoch_h": 19.25,
+      "epoch_ai_h": 2.5,
+      "start_date": "2026-07-09",
+      "end_date": "2026-07-13",
+      "sprints": [
+        {
+          "id": "s4.1",
+          "order": 1,
+          "name": "S4.1 Дневной отчёт",
+          "sprint_h": 15.25,
+          "sprint_ai_h": 2,
+          "sprint_days": 2,
+          "start_date": "2026-07-09",
+          "end_date": "2026-07-10",
+          "tasks": [
+            {
+              "id": "t4.1.1",
+              "name": "Генератор дневного отчёта (CSV + markdown из daily_*: задачи, время, простои, метрики 1–9)",
+              "done_criteria": "отчёт за день формируется в CSV и markdown со всеми метриками",
+              "realistic_h": 4,
+              "pessimistic_h": 7,
+              "ai_estimate_h": 1,
+              "estimate_h": 7.25,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "b26439f8-3047-4769-ae3e-92cbcb87fd3a",
+              "plane_identifier": "TIME-25",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t4.1.2",
+              "name": "CLI report (дата/сотрудник/формат)",
+              "done_criteria": "timechecker report --date --employee --format отдаёт отчёт",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "872618c4-2b20-4ea2-a5db-be852d1243b0",
+              "plane_identifier": "TIME-26",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t4.1.3",
+              "name": "(опц.) Рапорт-комментарий в Plane",
+              "done_criteria": "дневная сводка постится комментарием в Plane-проект",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "efa46530-9969-4183-9254-20dc0a2747af",
+              "plane_identifier": "TIME-27",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "fc8afde4-c79b-4b8f-ad09-efdaac3eaaec"
+        },
+        {
+          "id": "s4.2",
+          "order": 2,
+          "name": "S4.2 Приёмка отчётности",
+          "sprint_h": 4,
+          "sprint_ai_h": 0.5,
+          "sprint_days": 1,
+          "start_date": "2026-07-13",
+          "end_date": "2026-07-13",
+          "tasks": [
+            {
+              "id": "t4.2.1",
+              "name": "Приёмочный прогон отчёта (за тестовый день, сверка метрик 1–9 вручную)",
+              "done_criteria": "отчёт за реальный день проверен; метрики совпали с ожиданием",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "qa",
+              "status": "todo",
+              "plane_issue_id": "da200b42-c371-41e4-823c-3c22ad22d5e5",
+              "plane_identifier": "TIME-28",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "8f1f969f-a20a-459b-9a28-c6870565287f"
+        }
+      ],
+      "plane_module_id": "0a875e80-135f-4a1d-bcfd-7c998c441979"
+    },
+    {
+      "id": "e5",
+      "order": 5,
+      "name": "E5. Упаковка / эксплуатация",
+      "epoch_h": 23,
+      "epoch_ai_h": 3.5,
+      "start_date": "2026-07-14",
+      "end_date": "2026-07-17",
+      "sprints": [
+        {
+          "id": "s5.1",
+          "order": 1,
+          "name": "S5.1 Деплой агента",
+          "sprint_h": 9.75,
+          "sprint_ai_h": 1.5,
+          "sprint_days": 2,
+          "start_date": "2026-07-14",
+          "end_date": "2026-07-15",
+          "tasks": [
+            {
+              "id": "t5.1.1",
+              "name": "Деплой агента (Scheduled Task под учёткой, конфиг, автозапуск)",
+              "done_criteria": "агент ставится и стартует на учётке; сбор идёт автономно",
+              "realistic_h": 3,
+              "pessimistic_h": 6,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.75,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "c4b2c07c-a62b-4ac7-8703-8f5b8acf55a7",
+              "plane_identifier": "TIME-29",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t5.1.2",
+              "name": "Логи/диагностика/health агента",
+              "done_criteria": "состояние сбора видно в логах; ошибки диагностируемы",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "75ed2b81-5378-4d6f-944e-76ffe0f08407",
+              "plane_identifier": "TIME-30",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "fbafce1b-ef6c-4ce6-8f22-b9ff286e4370"
+        },
+        {
+          "id": "s5.2",
+          "order": 2,
+          "name": "S5.2 Безопасность / эксплуатация",
+          "sprint_h": 13.25,
+          "sprint_ai_h": 2,
+          "sprint_days": 2,
+          "start_date": "2026-07-16",
+          "end_date": "2026-07-17",
+          "tasks": [
+            {
+              "id": "t5.2.1",
+              "name": "Безопасность данных (доступ к БД, секреты, гарантия metadata-only)",
+              "done_criteria": "доступ ограничен; секреты не в репо; тело сообщений не хранится",
+              "realistic_h": 3,
+              "pessimistic_h": 5,
+              "ai_estimate_h": 1,
+              "estimate_h": 5.25,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "90452d5f-8999-4314-832a-7a15cec1e655",
+              "plane_identifier": "TIME-31",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t5.2.2",
+              "name": "Политика ретеншна + очистка старых данных",
+              "done_criteria": "срок хранения настраивается; очистка работает",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "code",
+              "status": "todo",
+              "plane_issue_id": "2de443c6-4a74-44a6-9a16-107611a4c916",
+              "plane_identifier": "TIME-32",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            },
+            {
+              "id": "t5.2.3",
+              "name": "Документация эксплуатации (README + runbook)",
+              "done_criteria": "README и runbook покрывают установку/запуск/диагностику",
+              "realistic_h": 2,
+              "pessimistic_h": 4,
+              "ai_estimate_h": 0.5,
+              "estimate_h": 4,
+              "task_type": "doc",
+              "status": "todo",
+              "plane_issue_id": "8a6e00e2-2cde-4bd2-b528-926a537ad504",
+              "plane_identifier": "TIME-33",
+              "plane_linked_cycle": true,
+              "plane_linked_module": true
+            }
+          ],
+          "plane_cycle_id": "316f789e-c71b-4e48-bc2b-1ea8c92ee5ba"
+        }
+      ],
+      "plane_module_id": "9624cdb6-9859-40dc-b9c6-45d064721035"
+    }
+  ],
+  "deferred_epochs": [
+    {
+      "id": "e6",
+      "name": "E6. Перенос на серверную БД (отложено — планируется отдельно после пилота)"
+    }
+  ]
+}
