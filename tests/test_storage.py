@@ -8,10 +8,73 @@ from timechecker.storage import (
 
 def test_migrations_idempotent(tmp_path):
     conn = init_db(tmp_path / "t.db")
-    assert current_version(conn) == 2
+    assert current_version(conn) == 3
     # повторное применение — без ошибок, версия не меняется
-    assert apply_migrations(conn) == 2
-    assert current_version(conn) == 2
+    assert apply_migrations(conn) == 3
+    assert current_version(conn) == 3
+    conn.close()
+
+
+def test_migration_v3_upgrade_with_data(tmp_path):
+    """Апгрейд v2→v3 с данными: пересоздание agent_session + бэкфилл daily_agent_usage."""
+    from datetime import UTC, datetime
+
+    from timechecker.storage.db import connect
+    from timechecker.storage.schema import MIGRATIONS
+
+    conn = connect(tmp_path / "t.db")
+    conn.execute("CREATE TABLE schema_migrations "
+                 "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+    now = datetime.now(UTC).isoformat()
+    for version, sql in MIGRATIONS[:2]:  # только v1+v2 — состояние «старого прода»
+        conn.executescript(sql)
+        conn.execute("INSERT INTO schema_migrations VALUES(?, ?)", (version, now))
+    conn.commit()
+    conn.execute("INSERT INTO employee(id, windows_username, created_at) VALUES(1, 'Oleg', ?)",
+                 (now,))
+    conn.execute("INSERT INTO project(id, slug, created_at) VALUES(1, 'p', ?)", (now,))
+    conn.execute("INSERT INTO task(id, project_id, plane_identifier) VALUES(7, 1, 'TIME-7')")
+    conn.execute(
+        "INSERT INTO claude_session(id, employee_id, session_uid, message_count, tokens_in, "
+        "tokens_out, cache_read, cache_creation, model) VALUES(3, 1, 's1', 5, 100, 200, 9, 4, "
+        "'claude-opus-4-8')")
+    # день с задачной строкой и остатком: summary 120 сообщ./50000 ток., задача 100/40000
+    conn.execute(
+        "INSERT INTO daily_summary(employee_id, work_date, claude_messages, claude_tokens, "
+        "claude_cache_read, claude_cache_creation, claude_cost_usd, computed_at) "
+        "VALUES(1, '2026-06-09', 120, 50000, 1000, 200, 5.0, ?)", (now,))
+    conn.execute(
+        "INSERT INTO daily_task_time(employee_id, work_date, task_id, active_minutes, "
+        "claude_messages, claude_tokens, claude_cache_read, claude_cache_creation, "
+        "claude_cost_usd, computed_at) VALUES(1, '2026-06-09', 7, 60, 100, 40000, 800, 150, "
+        "4.0, ?)", (now,))
+    # день только с summary (без задачных строк) — остаток не должен потеряться
+    conn.execute(
+        "INSERT INTO daily_summary(employee_id, work_date, claude_messages, claude_tokens, "
+        "claude_cost_usd, computed_at) VALUES(1, '2026-06-08', 10, 3000, 0.5, ?)", (now,))
+    conn.commit()
+
+    assert apply_migrations(conn) == 3
+
+    s = conn.execute("SELECT * FROM agent_session WHERE session_uid='s1'").fetchone()
+    assert s["id"] == 3 and s["source"] == "claude" and s["tokens_out"] == 200
+    rows = {(r["work_date"], r["task_id"]): dict(r) for r in conn.execute(
+        "SELECT * FROM daily_agent_usage").fetchall()}
+    task_row = rows[("2026-06-09", 7)]
+    assert task_row["messages"] == 100 and task_row["tokens"] == 40000
+    rest = rows[("2026-06-09", None)]  # остаток: 20 сообщ., 10000 ток., $1
+    assert rest["messages"] == 20 and rest["tokens"] == 10000
+    assert abs(rest["cost_usd"] - 1.0) < 1e-9
+    only_summary = rows[("2026-06-08", None)]
+    assert only_summary["messages"] == 10 and only_summary["tokens"] == 3000
+    # переехавшие колонки удалены, время осталось
+    cols_s = {r["name"] for r in conn.execute("PRAGMA table_info(daily_summary)").fetchall()}
+    cols_t = {r["name"] for r in conn.execute("PRAGMA table_info(daily_task_time)").fetchall()}
+    assert "claude_tokens" not in cols_s and "claude_cost_usd" not in cols_s
+    assert "models" in cols_s and "active_minutes" in cols_s
+    assert "claude_tokens" not in cols_t and "active_minutes" in cols_t
+    tt = conn.execute("SELECT active_minutes FROM daily_task_time").fetchone()
+    assert tt["active_minutes"] == 60
     conn.close()
 
 
@@ -52,9 +115,11 @@ def test_full_chain(tmp_path):
     r.insert_event(emp, "claude", "message", "2026-06-09T08:00:00Z", project_id=proj,
                    task_id=task, external_id="m1", meta={"tokens": 10}, ingest_run_id=run)
 
-    sess = r.upsert_claude_session(emp, "sess-1", project_id=proj, task_id=task,
-                                   message_count=5, tokens_in=100, tokens_out=200)
-    assert r.upsert_claude_session(emp, "sess-1", message_count=7) == sess  # идемпотентно
+    sess = r.upsert_agent_session(emp, "claude", "sess-1", project_id=proj, task_id=task,
+                                  message_count=5, tokens_in=100, tokens_out=200)
+    assert r.upsert_agent_session(emp, "claude", "sess-1", message_count=7) == sess  # идемпотент.
+    # тот же uid от другого агента — ОТДЕЛЬНАЯ сессия (ключ source+session_uid)
+    assert r.upsert_agent_session(emp, "codex", "sess-1", message_count=1) != sess
 
     com = r.upsert_git_commit(emp, "abc123", project_id=proj, branch="oleg",
                               subject="feat: x (TIME-4)")
@@ -65,10 +130,24 @@ def test_full_chain(tmp_path):
                               ts_utc="2026-06-09T07:00:00Z", external_id="tr-1")
     r.finish_ingest_run(run, "ok", counts={"events": 1})
 
-    r.upsert_daily_summary(emp, "2026-06-09", active_minutes=120, tasks_count=1, claude_tokens=300)
+    r.upsert_daily_summary(emp, "2026-06-09", active_minutes=120, tasks_count=1)
     tt = r.upsert_daily_task_time(emp, "2026-06-09", task, active_minutes=120, est_h=7.25)
     assert r.upsert_daily_task_time(emp, "2026-06-09", task, active_minutes=130) == tt
     r.insert_daily_idle(emp, "2026-06-09", "2026-06-09T10:00:00Z", "2026-06-09T10:45:00Z", 45)
+
+    # daily_agent_usage: delete-replace по дню
+    r.insert_daily_agent_usage(emp, "2026-06-09", task, "claude",
+                               messages=5, tokens=300, cost_usd=0.1)
+    r.insert_daily_agent_usage(emp, "2026-06-09", None, "codex",
+                               messages=2, tokens=900, cache_read=100, cost_usd=0.2)
+    rows = r.daily_agent_usage(emp, "2026-06-09")
+    assert len(rows) == 2
+    codex_row = next(x for x in rows if x["source"] == "codex")
+    assert codex_row["task_id"] is None and codex_row["tokens"] == 900
+    claude_row = next(x for x in rows if x["source"] == "claude")
+    assert claude_row["plane_identifier"] == "TIME-4"  # JOIN task для отчёта
+    r.delete_daily_agent_usage(emp, "2026-06-09")
+    assert r.daily_agent_usage(emp, "2026-06-09") == []
     r.close()
 
 

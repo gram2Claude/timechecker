@@ -112,11 +112,22 @@ def _cmd_prune(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def _cmd_daily(args: argparse.Namespace, cfg: Config) -> int:
-    """Дневной прогон: метрики + отчёт за сегодня (одна команда для планировщика)."""
-    ns = argparse.Namespace(date=getattr(args, "date", None), plane_issue=None)
+    """Дневной прогон: метрики за вчера+сегодня + отчёт за сегодня (для планировщика).
+
+    Вчера пересчитывается, потому что totals codex-сессий «дозревают» на дне старта сессии,
+    а поздние Claude-сообщения через полночь меняют вчерашние агрегаты.
+    """
+    date = getattr(args, "date", None)
+    rc0 = 0
+    if date is None:
+        today = (datetime.now(UTC) + timedelta(hours=3)).date()
+        yns = argparse.Namespace(date=(today - timedelta(days=1)).isoformat(), plane_issue=None)
+        rc0 = _cmd_metrics(yns, cfg) or _cmd_report(yns, cfg)  # вчерашний md тоже актуализируем
+        date = today.isoformat()
+    ns = argparse.Namespace(date=date, plane_issue=None)
     rc1 = _cmd_metrics(ns, cfg)
     rc2 = _cmd_report(ns, cfg)
-    return rc1 or rc2
+    return rc0 or rc1 or rc2
 
 
 def _cmd_deploy(args: argparse.Namespace, cfg: Config) -> int:

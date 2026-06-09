@@ -15,17 +15,24 @@ _TRANSCRIPT = "\n".join(json.dumps(o) for o in [
 ])
 
 
+def _isolate(tmp_path, monkeypatch):
+    """Изоляция от реальных каталогов (включая ~/.codex/sessions боевой машины)."""
+    monkeypatch.setenv("TIMECHECKER_DB_PATH", str(tmp_path / "db.sqlite"))
+    monkeypatch.setenv("TIMECHECKER_CODEX_SESSIONS_DIR", str(tmp_path / "no_codex"))
+    monkeypatch.setenv("TIMECHECKER_WGP_SECRETS", str(tmp_path / "none.json"))
+
+
 def test_collect_all_claude_hooks(tmp_path, monkeypatch):
     projects = tmp_path / "projects"
     pdir = projects / "p1"
     pdir.mkdir(parents=True)
     (pdir / "t.jsonl").write_text(_TRANSCRIPT, encoding="utf-8")
-    monkeypatch.setenv("TIMECHECKER_DB_PATH", str(tmp_path / "db.sqlite"))
+    _isolate(tmp_path, monkeypatch)
     monkeypatch.setenv("TIMECHECKER_CLAUDE_PROJECTS_DIR", str(projects))
-    monkeypatch.setenv("TIMECHECKER_WGP_SECRETS", str(tmp_path / "none.json"))
     cfg = Config.load()
     counts = collect_all(cfg, full=True)
     assert counts["events"] == 2 and counts["sessions"] == 1 and counts["hook_events"] == 0
+    assert counts["codex_sessions"] == 0
     assert collect_all(cfg, full=True)["events"] == 2  # идемпотентно
 
 
@@ -53,11 +60,10 @@ def test_collect_all_with_git_and_branch_fallback(tmp_path, monkeypatch):
     g("add", "-A")
     g("commit", "-q", "-m", "x (TIME-9)")
 
-    monkeypatch.setenv("TIMECHECKER_DB_PATH", str(tmp_path / "db.sqlite"))
+    _isolate(tmp_path, monkeypatch)
     monkeypatch.setenv("TIMECHECKER_CLAUDE_PROJECTS_DIR", str(projects))
     monkeypatch.setenv("TIMECHECKER_MONITORED_REPO_DIR", str(work))
     monkeypatch.setenv("TIMECHECKER_MONITORED_REPO_BRANCH", "nonexistent")  # тест fallback
-    monkeypatch.setenv("TIMECHECKER_WGP_SECRETS", str(tmp_path / "none.json"))
     cfg = Config.load()
     counts = collect_all(cfg, full=True)
     assert counts["events"] == 2
@@ -73,9 +79,8 @@ def test_collect_incremental_window(tmp_path, monkeypatch):
                       "timestamp": "2020-01-01T00:00:00Z",
                       "message": {"role": "user", "content": "x"}})
     (pdir / "t.jsonl").write_text(old, encoding="utf-8")
-    monkeypatch.setenv("TIMECHECKER_DB_PATH", str(tmp_path / "db.sqlite"))
+    _isolate(tmp_path, monkeypatch)
     monkeypatch.setenv("TIMECHECKER_CLAUDE_PROJECTS_DIR", str(projects))
-    monkeypatch.setenv("TIMECHECKER_WGP_SECRETS", str(tmp_path / "none.json"))
     cfg = Config.load()
     assert collect_all(cfg).get("events", 0) == 0       # окно lookback отфильтровало старое
     assert collect_all(cfg, full=True)["events"] == 1   # full — собирает

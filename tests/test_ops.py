@@ -20,8 +20,9 @@ def test_health_check(tmp_path, monkeypatch):
         repo.insert_event(emp, "claude", "message", "2026-06-09T08:00:00Z", external_id="e1")
         info = health_check(repo, cfg)
         assert info["db_exists"] is True
-        assert info["schema_version"] == 2
+        assert info["schema_version"] == 3
         assert info["stats"]["events"] == 1
+        assert "agent_sessions" in info["stats"]  # v3: claude_sessions → agent_sessions
         assert info["retention_days"] == 30
         assert "collect_task_scheduled" in info
     finally:

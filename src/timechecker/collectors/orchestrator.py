@@ -17,6 +17,7 @@ from ..config import Config
 from ..registry import load_projects
 from ..storage import open_repository
 from .claude import ClaudeCollector
+from .codex import CodexCollector, make_cwd_resolver
 from .git import GitCollector
 from .hooks import HookCollector
 from .plane import PlaneCollector, PlaneHttpClient
@@ -59,7 +60,7 @@ def collect_all(cfg: Config, *, since: str | None = None, full: bool = False) ->
     repo = open_repository(cfg)
     try:
         emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)
-        run = repo.start_ingest_run(emp, sources="claude,hook,git,plane")
+        run = repo.start_ingest_run(emp, sources="claude,codex,hook,git,plane")
         counts: dict[str, Any] = {}
         errors: dict[str, str] = {}
 
@@ -69,13 +70,18 @@ def collect_all(cfg: Config, *, since: str | None = None, full: bool = False) ->
             except Exception as e:  # изоляция: сбой одного коллектора не рушит прогон
                 errors[name] = f"{type(e).__name__}: {e}"
 
+        sources = _sources(cfg)
         _run("claude", lambda: ClaudeCollector(repo, cfg.claude_projects_dir).collect(
             emp, since=since, ingest_run_id=run))
+        _run("codex", lambda: CodexCollector(
+            repo, cfg.codex_sessions_dir, codex_since=cfg.codex_since).collect(
+            emp, since=since, project_resolver=make_cwd_resolver(repo, sources),
+            ingest_run_id=run))
         _run("hook", lambda: HookCollector(repo, cfg.db_path.parent / "hooks.jsonl").collect(
             emp, since=since, ingest_run_id=run))
 
         secrets = cfg.read_wgp_secrets()
-        for proj in _sources(cfg):
+        for proj in sources:
             pid = repo.upsert_project(
                 proj["slug"], repo=proj.get("repo"),
                 plane_project_id=proj.get("plane_project_id"),

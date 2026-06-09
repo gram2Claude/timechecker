@@ -57,7 +57,9 @@ class Repository(ABC):
     ) -> int: ...
 
     @abstractmethod
-    def upsert_claude_session(self, employee_id: int, session_uid: str, **fields: Any) -> int: ...
+    def upsert_agent_session(
+        self, employee_id: int, source: str, session_uid: str, **fields: Any
+    ) -> int: ...
 
     @abstractmethod
     def upsert_git_commit(self, employee_id: int, sha: str, **fields: Any) -> int: ...
@@ -84,6 +86,18 @@ class Repository(ABC):
     def insert_daily_idle(
         self, employee_id: int, work_date: str, gap_start: str, gap_end: str, minutes: int
     ) -> int: ...
+
+    @abstractmethod
+    def insert_daily_agent_usage(
+        self, employee_id: int, work_date: str, task_id: int | None, source: str,
+        **fields: Any,
+    ) -> int: ...
+
+    @abstractmethod
+    def delete_daily_agent_usage(self, employee_id: int, work_date: str) -> None: ...
+
+    @abstractmethod
+    def daily_agent_usage(self, employee_id: int, work_date: str) -> list[dict]: ...
 
     # --- чтение / обслуживание ---
     @abstractmethod

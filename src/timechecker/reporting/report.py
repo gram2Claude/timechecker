@@ -1,4 +1,4 @@
-"""Дневной отчёт (E4, TIME-25): daily_* → markdown + HTML (для Plane-комментария)."""
+"""Дневной отчёт (E4, TIME-25; E8 — мультиагентный расход): daily_* → markdown + HTML."""
 
 from __future__ import annotations
 
@@ -22,9 +22,38 @@ def _usd(x: Any) -> str:
 
 
 def _models(summary: dict) -> str:
-    """Список моделей с tier-ярлыком: ' · модели: opus (high), sonnet (medium)'."""
+    """Список моделей с tier-ярлыком: 'opus (high), gpt-5.5 (high)' (все агенты дня)."""
     fams = [f.strip() for f in (summary.get("models") or "").split(",") if f.strip()]
-    return " · модели: " + ", ".join(f"{f} ({model_tier(f)})" for f in fams) if fams else ""
+    return ", ".join(f"{f} ({model_tier(f)})" for f in fams)
+
+
+def _by_source(usage_rows: list[dict]) -> dict[str, dict]:
+    """Свернуть строки daily_agent_usage в итоги по source."""
+    out: dict[str, dict] = {}
+    for r in usage_rows:
+        s = out.setdefault(r["source"], {"messages": 0, "tokens": 0, "cache_read": 0,
+                                         "cache_creation": 0, "cost_usd": 0.0, "rows": 0})
+        s["messages"] += int(r.get("messages") or 0)
+        s["tokens"] += int(r.get("tokens") or 0)
+        s["cache_read"] += int(r.get("cache_read") or 0)
+        s["cache_creation"] += int(r.get("cache_creation") or 0)
+        s["cost_usd"] += float(r.get("cost_usd") or 0)
+        s["rows"] += 1
+    return out
+
+
+def _by_task(usage_rows: list[dict]) -> dict[int, dict]:
+    """Расход на задачу (сумма по source); строки task_id=NULL не входят."""
+    out: dict[int, dict] = {}
+    for r in usage_rows:
+        tid = r.get("task_id")
+        if tid is None:
+            continue
+        t = out.setdefault(tid, {"messages": 0, "tokens": 0, "cost_usd": 0.0})
+        t["messages"] += int(r.get("messages") or 0)
+        t["tokens"] += int(r.get("tokens") or 0)
+        t["cost_usd"] += float(r.get("cost_usd") or 0)
+    return out
 
 
 def build_daily_report(repo: Any, employee_id: int, work_date: str) -> dict:
@@ -32,20 +61,25 @@ def build_daily_report(repo: Any, employee_id: int, work_date: str) -> dict:
     summary = repo.get_daily_summary(employee_id, work_date)
     tasks = repo.daily_task_times(employee_id, work_date)
     idles = repo.daily_idles(employee_id, work_date)
+    usage = repo.daily_agent_usage(employee_id, work_date)
     return {
         "work_date": work_date,
         "summary": summary,
         "tasks": tasks,
         "idle": idles,
-        "markdown": render_markdown(work_date, summary, tasks, idles),
+        "usage": usage,
+        "markdown": render_markdown(work_date, summary, tasks, idles, usage),
     }
 
 
-def render_markdown(work_date: str, summary: dict | None,
-                    tasks: list[dict], idles: list[dict]) -> str:
+def render_markdown(work_date: str, summary: dict | None, tasks: list[dict],
+                    idles: list[dict], usage_rows: list[dict] | None = None) -> str:
     if not summary:
         return f"# Отчёт за {work_date} (МСК)\n\n_Нет данных за день._\n"
     s = summary
+    usage_rows = usage_rows or []
+    src = _by_source(usage_rows)
+    task_usage = _by_task(usage_rows)
     span = f"{_hhmm(s.get('span_start'))}–{_hhmm(s.get('span_end'))}"
     lines = [
         f"# Отчёт за {work_date} (МСК)",
@@ -57,9 +91,31 @@ def render_markdown(work_date: str, summary: dict | None,
         f"- **Задач за день:** {s.get('tasks_count', 0)} · "
         f"**переключений:** {s.get('switches', 0)} · "
         f"**макс. фокус:** {_hm(s.get('longest_focus_min'))}",
-        f"- **Claude:** {s.get('claude_messages', 0)} сообщ., {s.get('claude_tokens', 0)} токенов "
-        f"(кэш: {s.get('claude_cache_read', 0)} чит. / {s.get('claude_cache_creation', 0)} зап.) · "
-        f"**≈ API-эквивалент {_usd(s.get('claude_cost_usd'))}**{_models(s)}",
+    ]
+    cl = src.get("claude")
+    if cl:
+        lines.append(
+            f"- **Claude:** {cl['messages']} сообщ., {cl['tokens']} токенов "
+            f"(кэш: {cl['cache_read']} чит. / {cl['cache_creation']} зап.) · "
+            f"**≈ API-эквивалент {_usd(cl['cost_usd'])}**")
+    cx = src.get("codex")
+    if cx:
+        lines.append(
+            f"- **codex:** {cx['messages']} ходов, {cx['tokens']} токенов "
+            f"(кэш: {cx['cache_read']} чит.) · "
+            f"**≈ API-эквивалент {_usd(cx['cost_usd'])}**")
+    others = {k: v for k, v in src.items() if k not in ("claude", "codex")}
+    for name, v in sorted(others.items()):
+        lines.append(
+            f"- **{name}:** {v['messages']} сообщ., {v['tokens']} токенов · "
+            f"**≈ API-эквивалент {_usd(v['cost_usd'])}**")
+    if len(src) > 1:
+        total = sum(v["cost_usd"] for v in src.values())
+        lines.append(f"- **Всего ИИ:** ≈ API-эквивалент {_usd(total)}")
+    models = _models(s)
+    if models:  # отдельной строкой: видно и в дни «только codex» (не привязано к Claude)
+        lines.append(f"- **Модели:** {models}")
+    lines += [
         f"- **Коммитов:** {s.get('commits', 0)} · **гигиена:** {s.get('hygiene_score', 0)} "
         f"(доля с PLANE-ID)",
         "",
@@ -69,11 +125,12 @@ def render_markdown(work_date: str, summary: dict | None,
     ]
     for t in tasks:
         est = t.get("est_h")
+        u = task_usage.get(t.get("task_id"), {})
         lines.append(
             f"| {t.get('plane_identifier') or '—'} {t.get('title') or ''} | "
             f"{_hm(t.get('active_minutes'))} | {f'{est}ч' if est is not None else '—'} | "
-            f"{t.get('claude_messages', 0)} | {t.get('claude_tokens', 0)} | "
-            f"{_usd(t.get('claude_cost_usd'))} | {t.get('commits', 0)} |"
+            f"{u.get('messages', 0)} | {u.get('tokens', 0)} | "
+            f"{_usd(u.get('cost_usd'))} | {t.get('commits', 0)} |"
         )
     if not tasks:
         lines.append("| — | — | — | — | — | — | — |")
