@@ -11,6 +11,7 @@ import os
 from . import __version__
 from .config import Config
 from .logging_setup import get_logger, setup_logging
+from .storage import current_version, init_db
 
 log = get_logger("timechecker.cli")
 
@@ -28,6 +29,13 @@ def _cmd_collect(args: argparse.Namespace, cfg: Config) -> int:
 
 def _cmd_report(args: argparse.Namespace, cfg: Config) -> int:
     log.info("report: дневной отчёт по метрикам — будет реализован в E4")
+    return 0
+
+
+def _cmd_initdb(args: argparse.Namespace, cfg: Config) -> int:
+    conn = init_db(cfg.db_path)
+    log.info("initdb: схема применена (версия %s) → %s", current_version(conn), cfg.db_path)
+    conn.close()
     return 0
 
 
@@ -49,6 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Логи в формате JSON",
     )
     sub = p.add_subparsers(dest="command", required=True)
+    sub.add_parser("initdb", help="Создать/мигрировать БД SQLite (применить схему)")
     sub.add_parser("collect", help="Собрать output-сигналы за период (E2)")
     sub.add_parser("report", help="Сформировать дневной отчёт (E4)")
     return p
@@ -61,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     cfg = Config.load()
     for warn in cfg.validate():
         get_logger("timechecker.config").warning(warn)
-    handlers = {"collect": _cmd_collect, "report": _cmd_report}
+    handlers = {"initdb": _cmd_initdb, "collect": _cmd_collect, "report": _cmd_report}
     return handlers[args.command](args, cfg)
 
 
