@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..config import Config
@@ -46,8 +47,15 @@ def _sources(cfg: Config) -> list[dict]:
     return out
 
 
-def collect_all(cfg: Config, *, since: str | None = None) -> dict:
-    """Прогнать все настроенные коллекторы по всем проектам; вернуть сводные счётчики."""
+def collect_all(cfg: Config, *, since: str | None = None, full: bool = False) -> dict:
+    """Прогнать все настроенные коллекторы по всем проектам; вернуть сводные счётчики.
+
+    По умолчанию инкрементально: окно ``since`` = now − ``collect_lookback_days`` (idempotent
+    upsert поверх накопленной БД — критично для Postgres по сети). ``full=True`` — полный пересбор.
+    """
+    if since is None and not full:
+        days = getattr(cfg, "collect_lookback_days", 2)
+        since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     repo = open_repository(cfg)
     try:
         emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)

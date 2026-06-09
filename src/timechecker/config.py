@@ -44,6 +44,7 @@ class Config:
     plane_identifier_prefix: str | None
     retention_days: int
     db_url: str | None
+    collect_lookback_days: int
 
     @classmethod
     def load(cls) -> Config:
@@ -84,6 +85,7 @@ class Config:
             plane_identifier_prefix=_env("TIMECHECKER_PLANE_PREFIX", None),
             retention_days=int(_env("TIMECHECKER_RETENTION_DAYS", "30") or "30"),
             db_url=db_url,
+            collect_lookback_days=int(_env("TIMECHECKER_COLLECT_LOOKBACK_DAYS", "2") or "2"),
         )
 
     def employee_branch(self) -> tuple[str, str]:
