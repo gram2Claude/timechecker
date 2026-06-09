@@ -24,9 +24,9 @@ def test_collect_all_claude_hooks(tmp_path, monkeypatch):
     monkeypatch.setenv("TIMECHECKER_CLAUDE_PROJECTS_DIR", str(projects))
     monkeypatch.setenv("TIMECHECKER_WGP_SECRETS", str(tmp_path / "none.json"))
     cfg = Config.load()
-    counts = collect_all(cfg)
+    counts = collect_all(cfg, full=True)
     assert counts["events"] == 2 and counts["sessions"] == 1 and counts["hook_events"] == 0
-    assert collect_all(cfg)["events"] == 2  # идемпотентно
+    assert collect_all(cfg, full=True)["events"] == 2  # идемпотентно
 
 
 def test_build_schtasks_args():
@@ -59,7 +59,23 @@ def test_collect_all_with_git_and_branch_fallback(tmp_path, monkeypatch):
     monkeypatch.setenv("TIMECHECKER_MONITORED_REPO_BRANCH", "nonexistent")  # тест fallback
     monkeypatch.setenv("TIMECHECKER_WGP_SECRETS", str(tmp_path / "none.json"))
     cfg = Config.load()
-    counts = collect_all(cfg)
+    counts = collect_all(cfg, full=True)
     assert counts["events"] == 2
     assert counts["commits"] == 1  # fallback на HEAD несмотря на неверную ветку
     assert "errors" not in counts
+
+
+def test_collect_incremental_window(tmp_path, monkeypatch):
+    projects = tmp_path / "projects"
+    pdir = projects / "p1"
+    pdir.mkdir(parents=True)
+    old = json.dumps({"type": "user", "sessionId": "s9", "uuid": "old1",
+                      "timestamp": "2020-01-01T00:00:00Z",
+                      "message": {"role": "user", "content": "x"}})
+    (pdir / "t.jsonl").write_text(old, encoding="utf-8")
+    monkeypatch.setenv("TIMECHECKER_DB_PATH", str(tmp_path / "db.sqlite"))
+    monkeypatch.setenv("TIMECHECKER_CLAUDE_PROJECTS_DIR", str(projects))
+    monkeypatch.setenv("TIMECHECKER_WGP_SECRETS", str(tmp_path / "none.json"))
+    cfg = Config.load()
+    assert collect_all(cfg).get("events", 0) == 0       # окно lookback отфильтровало старое
+    assert collect_all(cfg, full=True)["events"] == 1   # full — собирает

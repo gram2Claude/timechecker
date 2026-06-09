@@ -42,7 +42,7 @@ def _cmd_hook(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def _cmd_collect(args: argparse.Namespace, cfg: Config) -> int:
-    counts = collect_all(cfg)
+    counts = collect_all(cfg, since=getattr(args, "since", None), full=getattr(args, "full", False))
     log.info("collect: %s → %s", counts, cfg.db_path)
     return 0
 
@@ -186,7 +186,9 @@ def build_parser() -> argparse.ArgumentParser:
     hook_p.add_argument("event", choices=HOOK_EVENTS)
     hook_p.add_argument("--session", default=None, help="sessionId")
     hook_p.add_argument("--project", default=None, help="project_key")
-    sub.add_parser("collect", help="Собрать output-сигналы (Claude/hooks/git/Plane) в БД")
+    collect_p = sub.add_parser("collect", help="Собрать output-сигналы в БД")
+    collect_p.add_argument("--since", default=None, help="ISO-время; события не старше")
+    collect_p.add_argument("--full", action="store_true", help="полный пересбор (без окна)")
     metrics_p = sub.add_parser("metrics", help="Посчитать дневные метрики (E3) за дату")
     metrics_p.add_argument("--date", default=None, help="YYYY-MM-DD (МСК); по умолчанию сегодня")
     sched_p = sub.add_parser("schedule", help="Периодический сбор через Task Scheduler")
