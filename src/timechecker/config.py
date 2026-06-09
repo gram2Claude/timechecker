@@ -99,6 +99,10 @@ class Config:
         except (OSError, json.JSONDecodeError):
             return {}
 
+    def supabase_dsn(self) -> str | None:
+        """DSN Supabase для sync — независимо от default-backend (env или secrets)."""
+        return _env("TIMECHECKER_DB_URL", None) or self.read_wgp_secrets().get("supabase_db_url")
+
     def validate(self) -> list[str]:
         """Список предупреждений (не падаем — для диагностики при старте)."""
         warnings: list[str] = []

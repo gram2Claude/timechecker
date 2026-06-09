@@ -124,11 +124,15 @@ def _cmd_deploy(args: argparse.Namespace, cfg: Config) -> int:
     exe = shutil.which("timechecker") or "timechecker"
     rc1 = register_task("timechecker-collect", f'"{exe}" collect', args.every)
     rc2 = register_daily_task("timechecker-report", f'"{exe}" daily', args.report_at)
-    backend = "postgres" if cfg.db_url else "sqlite"
-    log.info("deploy: collect/%sмин rc=%s; daily @%s rc=%s; backend=%s; exe=%s",
-             args.every, rc1, args.report_at, rc2, backend, exe)
-    log.info("deploy: подключи хуки (см. RUNBOOK); проверь 'timechecker health'")
-    return 0 if rc1 == 0 and rc2 == 0 else 1
+    rc3 = 0
+    has_cloud = bool(cfg.supabase_dsn())
+    if has_cloud:  # local-first: collect/metrics/report → SQLite, sync → Supabase
+        rc3 = register_task("timechecker-sync", f'"{exe}" sync', args.sync_every)
+    log.info("deploy: collect/%sмин rc=%s; daily @%s rc=%s; sync/%s rc=%s; exe=%s",
+             args.every, rc1, args.report_at, rc2,
+             f"{args.sync_every}мин" if has_cloud else "off", rc3, exe)
+    log.info("deploy: collect/metrics/report → SQLite; sync → Supabase. Проверь 'health'.")
+    return 0 if rc1 == 0 and rc2 == 0 and rc3 == 0 else 1
 
 
 def _cmd_register_project(args: argparse.Namespace, cfg: Config) -> int:
@@ -157,6 +161,25 @@ def _cmd_migrate_db(args: argparse.Namespace, cfg: Config) -> int:
     try:
         counts = migrate_sqlite_to_postgres(src, dst)
         log.info("migrate-db: перенесено в Postgres %s", counts)
+    finally:
+        src.close()
+        dst.close()
+    return 0
+
+
+def _cmd_sync(args: argparse.Namespace, cfg: Config) -> int:
+    dsn = cfg.supabase_dsn()
+    if not dsn:
+        log.error("sync: нет Supabase DSN (supabase_db_url в secrets / TIMECHECKER_DB_URL)")
+        return 1
+    from .storage.postgres_repository import PostgresRepository
+    from .storage.sync import sync_to_postgres
+    src = SqliteRepository.open(cfg.db_path)
+    dst = PostgresRepository.open(dsn)
+    try:
+        counts = sync_to_postgres(src, dst, full=args.full, reset=args.reset,
+                                  lookback_days=cfg.collect_lookback_days)
+        log.info("sync → Supabase: %s", counts)
     finally:
         src.close()
         dst.close()
@@ -204,6 +227,7 @@ def build_parser() -> argparse.ArgumentParser:
     deploy_p = sub.add_parser("deploy", help="Развернуть агент (Task Scheduler: collect + report)")
     deploy_p.add_argument("--every", type=int, default=30, help="период collect, минут")
     deploy_p.add_argument("--report-at", default="23:50", help="время дневного отчёта HH:MM")
+    deploy_p.add_argument("--sync-every", type=int, default=60, help="период sync, минут")
     daily_p = sub.add_parser("daily", help="Дневной прогон: метрики + отчёт за сегодня")
     daily_p.add_argument("--date", default=None, help="YYYY-MM-DD (МСК); по умолчанию сегодня")
     rp = sub.add_parser("register-project", help="Привязать проект к учёту времени (git/Plane)")
@@ -214,6 +238,9 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--plane-prefix", default=None)
     sub.add_parser("projects", help="Список привязанных проектов")
     sub.add_parser("migrate-db", help="Перенести данные SQLite → Postgres (по db_url)")
+    sync_p = sub.add_parser("sync", help="Реплицировать SQLite → Supabase (инкрементально)")
+    sync_p.add_argument("--full", action="store_true", help="полная репликация (все строки)")
+    sync_p.add_argument("--reset", action="store_true", help="TRUNCATE Supabase + ресед")
     return p
 
 
@@ -238,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
         "register-project": _cmd_register_project,
         "projects": _cmd_projects,
         "migrate-db": _cmd_migrate_db,
+        "sync": _cmd_sync,
     }
     return handlers[args.command](args, cfg)
 
