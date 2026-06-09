@@ -37,6 +37,11 @@ class Config:
     dev_branch: str
     employee_username: str
     db_path: Path
+    project_slug: str | None
+    monitored_repo_dir: Path | None
+    monitored_repo_branch: str | None
+    plane_project_id: str | None
+    plane_identifier_prefix: str | None
 
     @classmethod
     def load(cls) -> Config:
@@ -50,6 +55,7 @@ class Config:
         db_path = _env(
             "TIMECHECKER_DB_PATH", str(claude_home / "timechecker" / "timechecker.db")
         )
+        repo_dir = _env("TIMECHECKER_MONITORED_REPO_DIR", None)
         return cls(
             claude_home=claude_home,
             claude_projects_dir=Path(projects),
@@ -59,6 +65,11 @@ class Config:
             dev_branch=dev_branch,
             employee_username=username,
             db_path=Path(db_path),
+            project_slug=_env("TIMECHECKER_PROJECT_SLUG", None),
+            monitored_repo_dir=Path(repo_dir) if repo_dir else None,
+            monitored_repo_branch=_env("TIMECHECKER_MONITORED_REPO_BRANCH", None),
+            plane_project_id=_env("TIMECHECKER_PLANE_PROJECT_ID", None),
+            plane_identifier_prefix=_env("TIMECHECKER_PLANE_PREFIX", None),
         )
 
     def employee_branch(self) -> tuple[str, str]:

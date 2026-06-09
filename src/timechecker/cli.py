@@ -1,7 +1,4 @@
-"""CLI timechecker (TIME-3): entrypoint + подкоманды collect/report (пока заглушки).
-
-Реальная логика появится в эпохах E2 (коллекторы → SQLite) и E4 (отчётность).
-"""
+"""CLI timechecker: entrypoint + подкоманды (initdb / hook / collect / schedule / report)."""
 
 from __future__ import annotations
 
@@ -9,36 +6,14 @@ import argparse
 import os
 
 from . import __version__
-from .collectors.claude import ClaudeCollector
-from .collectors.hooks import HOOK_EVENTS, HookCollector, append_hook_event
+from .collectors.hooks import HOOK_EVENTS, append_hook_event
+from .collectors.orchestrator import collect_all
+from .collectors.scheduler import register_task
 from .config import Config
 from .logging_setup import get_logger, setup_logging
-from .storage import SqliteRepository, current_version, init_db
+from .storage import current_version, init_db
 
 log = get_logger("timechecker.cli")
-
-
-def _cmd_collect(args: argparse.Namespace, cfg: Config) -> int:
-    repo = SqliteRepository.open(cfg.db_path)
-    try:
-        emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)
-        run = repo.start_ingest_run(emp, sources="claude,hook")
-        claude = ClaudeCollector(repo, cfg.claude_projects_dir).collect(emp, ingest_run_id=run)
-        spool = cfg.db_path.parent / "hooks.jsonl"
-        hooks = HookCollector(repo, spool).collect(emp, ingest_run_id=run)
-        repo.finish_ingest_run(run, "ok", counts={**claude, **hooks})
-        log.info(
-            "collect: claude события=%s сессий=%s, hook события=%s → %s",
-            claude["events"], claude["sessions"], hooks["hook_events"], cfg.db_path,
-        )
-    finally:
-        repo.close()
-    return 0
-
-
-def _cmd_report(args: argparse.Namespace, cfg: Config) -> int:
-    log.info("report: дневной отчёт по метрикам — будет реализован в E4")
-    return 0
 
 
 def _cmd_initdb(args: argparse.Namespace, cfg: Config) -> int:
@@ -52,6 +27,23 @@ def _cmd_hook(args: argparse.Namespace, cfg: Config) -> int:
     spool = cfg.db_path.parent / "hooks.jsonl"
     append_hook_event(spool, args.event, session_uid=args.session, project_key=args.project)
     log.info("hook: %s записан → %s", args.event, spool)
+    return 0
+
+
+def _cmd_collect(args: argparse.Namespace, cfg: Config) -> int:
+    counts = collect_all(cfg)
+    log.info("collect: %s → %s", counts, cfg.db_path)
+    return 0
+
+
+def _cmd_schedule(args: argparse.Namespace, cfg: Config) -> int:
+    rc = register_task(args.name, args.command, args.every)
+    log.info("schedule: '%s' каждые %s мин (schtasks rc=%s)", args.name, args.every, rc)
+    return 0 if rc == 0 else 1
+
+
+def _cmd_report(args: argparse.Namespace, cfg: Config) -> int:
+    log.info("report: дневной отчёт по метрикам — будет реализован в E4")
     return 0
 
 
@@ -74,11 +66,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("initdb", help="Создать/мигрировать БД SQLite (применить схему)")
-    sub.add_parser("collect", help="Собрать output-сигналы (Claude + хуки) в БД")
     hook_p = sub.add_parser("hook", help="Записать событие хука сессии в спул (для Claude Code)")
     hook_p.add_argument("event", choices=HOOK_EVENTS)
     hook_p.add_argument("--session", default=None, help="sessionId")
     hook_p.add_argument("--project", default=None, help="project_key")
+    sub.add_parser("collect", help="Собрать output-сигналы (Claude/hooks/git/Plane) в БД")
+    sched_p = sub.add_parser("schedule", help="Периодический сбор через Task Scheduler")
+    sched_p.add_argument("--name", default="timechecker-collect")
+    sched_p.add_argument("--command", default="timechecker collect")
+    sched_p.add_argument("--every", type=int, default=30, help="период, минут")
     sub.add_parser("report", help="Сформировать дневной отчёт (E4)")
     return p
 
@@ -94,6 +90,7 @@ def main(argv: list[str] | None = None) -> int:
         "initdb": _cmd_initdb,
         "hook": _cmd_hook,
         "collect": _cmd_collect,
+        "schedule": _cmd_schedule,
         "report": _cmd_report,
     }
     return handlers[args.command](args, cfg)
