@@ -9,10 +9,12 @@ from datetime import UTC, datetime, timedelta
 from . import __version__
 from .collectors.hooks import HOOK_EVENTS, append_hook_event
 from .collectors.orchestrator import collect_all
+from .collectors.plane import PlaneHttpClient
 from .collectors.scheduler import register_task
 from .config import Config
 from .logging_setup import get_logger, setup_logging
 from .metrics import compute_day
+from .reporting import build_daily_report, report_html
 from .storage import SqliteRepository, current_version, init_db
 
 log = get_logger("timechecker.cli")
@@ -57,7 +59,28 @@ def _cmd_schedule(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def _cmd_report(args: argparse.Namespace, cfg: Config) -> int:
-    log.info("report: дневной отчёт по метрикам — будет реализован в E4")
+    date = args.date or (datetime.now(UTC) + timedelta(hours=3)).date().isoformat()
+    repo = SqliteRepository.open(cfg.db_path)
+    try:
+        emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)
+        rep = build_daily_report(repo, emp, date)
+        out_dir = cfg.db_path.parent / "reports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        md_path = out_dir / f"{date}.md"
+        md_path.write_text(rep["markdown"], encoding="utf-8")
+        (out_dir / f"{date}.csv").write_text(rep["csv"], encoding="utf-8")
+        log.info("report %s → %s", date, md_path)
+        if args.plane_issue:
+            secrets = cfg.read_wgp_secrets()
+            client = PlaneHttpClient(
+                secrets.get("plane_base_url", "https://api.plane.so"),
+                secrets.get("plane_api_key", ""), secrets.get("plane_workspace_slug", ""),
+                cfg.plane_project_id or "",
+            )
+            client.post_issue_comment(args.plane_issue, report_html(rep["markdown"]))
+            log.info("report → Plane issue %s", args.plane_issue)
+    finally:
+        repo.close()
     return 0
 
 
@@ -91,7 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
     sched_p.add_argument("--name", default="timechecker-collect")
     sched_p.add_argument("--command", default="timechecker collect")
     sched_p.add_argument("--every", type=int, default=30, help="период, минут")
-    sub.add_parser("report", help="Сформировать дневной отчёт (E4)")
+    report_p = sub.add_parser("report", help="Дневной отчёт (markdown+CSV) из daily_*")
+    report_p.add_argument("--date", default=None, help="YYYY-MM-DD (МСК); по умолчанию сегодня")
+    report_p.add_argument("--plane-issue", default=None, help="issue для отчёта в Plane")
     return p
 
 

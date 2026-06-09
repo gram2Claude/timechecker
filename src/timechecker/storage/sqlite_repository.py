@@ -260,6 +260,30 @@ class SqliteRepository(Repository):
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def get_daily_summary(self, employee_id, work_date):
+        row = self.conn.execute(
+            "SELECT * FROM daily_summary WHERE employee_id=? AND work_date=?",
+            (employee_id, work_date),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def daily_task_times(self, employee_id, work_date):
+        rows = self.conn.execute(
+            "SELECT d.*, t.plane_identifier, t.title FROM daily_task_time d "
+            "JOIN task t ON t.id = d.task_id "
+            "WHERE d.employee_id=? AND d.work_date=? ORDER BY d.active_minutes DESC",
+            (employee_id, work_date),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def daily_idles(self, employee_id, work_date):
+        rows = self.conn.execute(
+            "SELECT gap_start, gap_end, minutes FROM daily_idle "
+            "WHERE employee_id=? AND work_date=? ORDER BY gap_start",
+            (employee_id, work_date),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def prune_raw(self, before_utc):
         c = self.conn
         c.execute(

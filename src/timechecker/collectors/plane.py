@@ -40,6 +40,23 @@ class PlaneHttpClient:
             data = json.loads(resp.read().decode("utf-8"))
         return data.get("results", data) if isinstance(data, dict) else data
 
+    def _post(self, path: str, body: dict) -> Any:
+        url = f"{self.base}/api/v1/workspaces/{self.ws}{path}"
+        data = json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(  # noqa: S310 (доверенный Plane API)
+            url, data=data, method="POST",
+            headers={
+                "X-API-Key": self.key, "Accept": "application/json",
+                "Content-Type": "application/json", "User-Agent": "timechecker/0.1.0",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+            return json.loads(resp.read().decode("utf-8"))
+
+    def post_issue_comment(self, issue_id: str, comment_html: str) -> Any:
+        return self._post(f"/projects/{self.pid}/issues/{issue_id}/comments/",
+                          {"comment_html": comment_html})
+
     def list_issues(self) -> list[dict]:
         return self._get(f"/projects/{self.pid}/issues/") or []
 
