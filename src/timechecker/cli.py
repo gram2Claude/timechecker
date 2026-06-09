@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 from datetime import UTC, datetime, timedelta
 
 from . import __version__
@@ -111,12 +112,21 @@ def _cmd_prune(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _cmd_daily(args: argparse.Namespace, cfg: Config) -> int:
+    """Дневной прогон: метрики + отчёт за сегодня (одна команда для планировщика)."""
+    ns = argparse.Namespace(date=getattr(args, "date", None), plane_issue=None)
+    rc1 = _cmd_metrics(ns, cfg)
+    rc2 = _cmd_report(ns, cfg)
+    return rc1 or rc2
+
+
 def _cmd_deploy(args: argparse.Namespace, cfg: Config) -> int:
-    rc1 = register_task("timechecker-collect", "timechecker collect", args.every)
-    rc2 = register_daily_task(
-        "timechecker-report", "cmd /c timechecker metrics && timechecker report", args.report_at)
-    log.info("deploy: collect/%sмин rc=%s; daily report @%s rc=%s",
-             args.every, rc1, args.report_at, rc2)
+    exe = shutil.which("timechecker") or "timechecker"
+    rc1 = register_task("timechecker-collect", f'"{exe}" collect', args.every)
+    rc2 = register_daily_task("timechecker-report", f'"{exe}" daily', args.report_at)
+    backend = "postgres" if cfg.db_url else "sqlite"
+    log.info("deploy: collect/%sмин rc=%s; daily @%s rc=%s; backend=%s; exe=%s",
+             args.every, rc1, args.report_at, rc2, backend, exe)
     log.info("deploy: подключи хуки (см. RUNBOOK); проверь 'timechecker health'")
     return 0 if rc1 == 0 and rc2 == 0 else 1
 
@@ -192,6 +202,8 @@ def build_parser() -> argparse.ArgumentParser:
     deploy_p = sub.add_parser("deploy", help="Развернуть агент (Task Scheduler: collect + report)")
     deploy_p.add_argument("--every", type=int, default=30, help="период collect, минут")
     deploy_p.add_argument("--report-at", default="23:50", help="время дневного отчёта HH:MM")
+    daily_p = sub.add_parser("daily", help="Дневной прогон: метрики + отчёт за сегодня")
+    daily_p.add_argument("--date", default=None, help="YYYY-MM-DD (МСК); по умолчанию сегодня")
     rp = sub.add_parser("register-project", help="Привязать проект к учёту времени (git/Plane)")
     rp.add_argument("--slug", required=True)
     rp.add_argument("--repo-dir", default=None)
@@ -220,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         "health": _cmd_health,
         "prune": _cmd_prune,
         "deploy": _cmd_deploy,
+        "daily": _cmd_daily,
         "register-project": _cmd_register_project,
         "projects": _cmd_projects,
         "migrate-db": _cmd_migrate_db,
