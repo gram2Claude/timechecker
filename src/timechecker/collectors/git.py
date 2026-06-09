@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import subprocess
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,14 @@ class GitCommit:
     ts_utc: str
     subject: str
     plane_ids: list[str]
+
+
+def _to_utc_z(iso: str) -> str:
+    """Нормализовать ISO-таймстемп (с офсетом) в UTC ...Z для единого формата хранения."""
+    try:
+        return datetime.fromisoformat(iso).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return iso
 
 
 def parse_plane_ids(text: str) -> list[str]:
@@ -67,7 +76,7 @@ def read_commits(git_dir: Path, *, branch: str | None = None,
         parts = rec.split(_FS)
         if len(parts) < 4:
             continue
-        out.append(GitCommit(sha=parts[0], author=parts[1], ts_utc=parts[2],
+        out.append(GitCommit(sha=parts[0], author=parts[1], ts_utc=_to_utc_z(parts[2]),
                              subject=parts[3], plane_ids=parse_plane_ids(parts[3])))
     return out
 

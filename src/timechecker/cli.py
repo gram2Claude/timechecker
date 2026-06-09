@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from datetime import UTC, datetime, timedelta
 
 from . import __version__
 from .collectors.hooks import HOOK_EVENTS, append_hook_event
@@ -11,7 +12,8 @@ from .collectors.orchestrator import collect_all
 from .collectors.scheduler import register_task
 from .config import Config
 from .logging_setup import get_logger, setup_logging
-from .storage import current_version, init_db
+from .metrics import compute_day
+from .storage import SqliteRepository, current_version, init_db
 
 log = get_logger("timechecker.cli")
 
@@ -33,6 +35,18 @@ def _cmd_hook(args: argparse.Namespace, cfg: Config) -> int:
 def _cmd_collect(args: argparse.Namespace, cfg: Config) -> int:
     counts = collect_all(cfg)
     log.info("collect: %s → %s", counts, cfg.db_path)
+    return 0
+
+
+def _cmd_metrics(args: argparse.Namespace, cfg: Config) -> int:
+    date = args.date or (datetime.now(UTC) + timedelta(hours=3)).date().isoformat()
+    repo = SqliteRepository.open(cfg.db_path)
+    try:
+        emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)
+        res = compute_day(repo, emp, date)
+        log.info("metrics %s: %s → %s", date, res, cfg.db_path)
+    finally:
+        repo.close()
     return 0
 
 
@@ -71,6 +85,8 @@ def build_parser() -> argparse.ArgumentParser:
     hook_p.add_argument("--session", default=None, help="sessionId")
     hook_p.add_argument("--project", default=None, help="project_key")
     sub.add_parser("collect", help="Собрать output-сигналы (Claude/hooks/git/Plane) в БД")
+    metrics_p = sub.add_parser("metrics", help="Посчитать дневные метрики (E3) за дату")
+    metrics_p.add_argument("--date", default=None, help="YYYY-MM-DD (МСК); по умолчанию сегодня")
     sched_p = sub.add_parser("schedule", help="Периодический сбор через Task Scheduler")
     sched_p.add_argument("--name", default="timechecker-collect")
     sched_p.add_argument("--command", default="timechecker collect")
@@ -90,6 +106,7 @@ def main(argv: list[str] | None = None) -> int:
         "initdb": _cmd_initdb,
         "hook": _cmd_hook,
         "collect": _cmd_collect,
+        "metrics": _cmd_metrics,
         "schedule": _cmd_schedule,
         "report": _cmd_report,
     }

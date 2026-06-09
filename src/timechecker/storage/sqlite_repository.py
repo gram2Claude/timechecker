@@ -214,6 +214,44 @@ class SqliteRepository(Repository):
         ).fetchone()
         return int(row["id"]) if row is not None else None
 
+    def all_tasks(self):
+        return [dict(r) for r in self.conn.execute("SELECT * FROM task").fetchall()]
+
+    def all_plane_transitions(self):
+        rows = self.conn.execute(
+            "SELECT task_id, from_state, to_state, ts_utc FROM plane_transition "
+            "WHERE ts_utc IS NOT NULL"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def commits_between(self, employee_id, start_utc, end_utc):
+        rows = self.conn.execute(
+            "SELECT id, sha, ts_utc, subject FROM git_commit "
+            "WHERE employee_id=? AND ts_utc>=? AND ts_utc<=? ORDER BY ts_utc",
+            (employee_id, start_utc, end_utc),
+        ).fetchall()
+        out = []
+        for r in rows:
+            tids = [x["task_id"] for x in self.conn.execute(
+                "SELECT task_id FROM commit_task WHERE commit_id=?", (r["id"],)).fetchall()]
+            d = dict(r)
+            d["task_ids"] = tids
+            out.append(d)
+        return out
+
+    def delete_daily_idle(self, employee_id, work_date):
+        self.conn.execute(
+            "DELETE FROM daily_idle WHERE employee_id=? AND work_date=?", (employee_id, work_date)
+        )
+        self.conn.commit()
+
+    def delete_daily_task_time(self, employee_id, work_date):
+        self.conn.execute(
+            "DELETE FROM daily_task_time WHERE employee_id=? AND work_date=?",
+            (employee_id, work_date),
+        )
+        self.conn.commit()
+
     def events_between(self, employee_id, start_utc, end_utc):
         rows = self.conn.execute(
             "SELECT * FROM activity_event WHERE employee_id=? AND ts_utc>=? AND ts_utc<=? "
