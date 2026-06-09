@@ -208,6 +208,12 @@ class SqliteRepository(Repository):
         ).fetchone()
         return dict(row) if row is not None else None
 
+    def task_id_by_identifier(self, plane_identifier):
+        row = self.conn.execute(
+            "SELECT id FROM task WHERE plane_identifier=?", (plane_identifier,)
+        ).fetchone()
+        return int(row["id"]) if row is not None else None
+
     def events_between(self, employee_id, start_utc, end_utc):
         rows = self.conn.execute(
             "SELECT * FROM activity_event WHERE employee_id=? AND ts_utc>=? AND ts_utc<=? "

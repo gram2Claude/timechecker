@@ -90,6 +90,9 @@ class Repository(ABC):
     def get_employee(self, windows_username: str) -> dict | None: ...
 
     @abstractmethod
+    def task_id_by_identifier(self, plane_identifier: str) -> int | None: ...
+
+    @abstractmethod
     def events_between(self, employee_id: int, start_utc: str, end_utc: str) -> list[dict]: ...
 
     @abstractmethod
