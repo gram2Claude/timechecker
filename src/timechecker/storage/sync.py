@@ -17,17 +17,19 @@ _RAW_SMALL = ["claude_session", "git_commit", "commit_task", "plane_transition"]
 _DAILY = ["daily_summary", "daily_task_time", "daily_idle"]
 _ALL = [*_REF, "activity_event", *_RAW_SMALL, *_DAILY]
 
-# таблица → (ключ конфликта, режим): "update" = DO UPDATE неключевых; "nothing" = DO NOTHING.
+# id сохраняется при репликации → конфликт по PK `id` идемпотентен и для NULL-able natural-ключей
+# (например activity_event.external_id бывает NULL — natural-конфликт его не ловит, re-push упал бы
+# на дубле PK). commit_task — без id, по композитному PK.
 _CONFLICT: dict[str, tuple[list[str], str]] = {
-    "employee": (["windows_username"], "update"),
-    "project": (["slug"], "update"),
-    "task": (["plane_identifier"], "update"),
+    "employee": (["id"], "update"),
+    "project": (["id"], "update"),
+    "task": (["id"], "update"),
     "ingest_run": (["id"], "update"),
-    "claude_session": (["session_uid"], "update"),
-    "git_commit": (["sha"], "update"),
+    "claude_session": (["id"], "update"),
+    "git_commit": (["id"], "update"),
     "commit_task": (["commit_id", "task_id"], "nothing"),
-    "plane_transition": (["external_id"], "update"),
-    "activity_event": (["source", "external_id"], "update"),
+    "plane_transition": (["id"], "update"),
+    "activity_event": (["id"], "update"),
 }
 
 _BATCH = 2000
@@ -92,19 +94,27 @@ def _sync_events(src: Any, dst: Any, *, full: bool, lookback_days: int, now: str
 
 
 def _sync_daily(src: Any, dst: Any) -> int:
-    """Агрегаты: delete-replace по всем (employee_id, work_date), что есть в SQLite."""
+    """Агрегаты: delete-replace по (employee_id, work_date) из SQLite — АТОМАРНО (один commit)."""
     days = set()
     for t in _DAILY:
         for r in src._query(f"SELECT DISTINCT employee_id, work_date FROM {t}"):
             days.add((r["employee_id"], r["work_date"]))
+    rows_by = {t: src._query(f"SELECT * FROM {t}") for t in _DAILY}
+    total = 0
     with dst.conn.cursor() as cur:
         for emp, wd in days:
             for t in _DAILY:
                 cur.execute(f"DELETE FROM {t} WHERE employee_id=%s AND work_date=%s", (emp, wd))
-    dst.conn.commit()
-    total = 0
-    for t in _DAILY:
-        total += _push(dst, t, src._query(f"SELECT * FROM {t}"), None, "plain")
+        for t in _DAILY:
+            rows = rows_by[t]
+            if not rows:
+                continue
+            cols = list(rows[0].keys())
+            ph = ",".join(["%s"] * len(cols))
+            cur.executemany(f'INSERT INTO {t} ({", ".join(cols)}) VALUES ({ph})',
+                            [tuple(r[c] for c in cols) for r in rows])
+            total += len(rows)
+    dst.conn.commit()  # delete+insert в одной транзакции → нет окна пустых партиций при сбое
     return total
 
 
