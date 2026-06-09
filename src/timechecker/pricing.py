@@ -56,9 +56,14 @@ def _ensure_overrides() -> None:
             data = json.load(fh)
     except (OSError, ValueError):
         return
+    if not isinstance(data, dict):
+        return
     for k, v in data.items():
-        if isinstance(v, (list, tuple)) and len(v) == 4:
-            RATES[k.lower()] = tuple(float(x) for x in v)
+        try:  # битую запись пропускаем, не роняя расчёт
+            if isinstance(v, (list, tuple)) and len(v) == 4:
+                RATES[str(k).lower()] = tuple(float(x) for x in v)
+        except (ValueError, TypeError):
+            continue
 
 
 def cost_usd(model: str | None, input_tokens: int, output_tokens: int,
