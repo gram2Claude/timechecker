@@ -49,6 +49,24 @@ def test_claude_collector_writes_idempotent(tmp_path):
     repo.close()
 
 
+def test_parse_captures_cache_and_model(tmp_path):
+    f = tmp_path / "t.jsonl"
+    line = {"type": "assistant", "sessionId": "s2", "uuid": "a9",
+            "timestamp": "2026-06-09T08:05:00Z",
+            "message": {"role": "assistant", "model": "claude-opus-4-8",
+                        "usage": {"input_tokens": 100, "output_tokens": 200,
+                                  "cache_creation_input_tokens": 5000,
+                                  "cache_read_input_tokens": 90000},
+                        "content": [{"type": "text"}]}}
+    f.write_text(json.dumps(line), encoding="utf-8")
+    e = parse_transcript(f)[0]
+    assert (e.cache_creation, e.cache_read) == (5000, 90000)
+    assert e.model == "claude-opus-4-8"
+    s = derive_sessions([e])["s2"]
+    assert s["cache_read"] == 90000 and s["cache_creation"] == 5000
+    assert s["model"] == "claude-opus-4-8"
+
+
 def test_hooks_spool_and_collector(tmp_path):
     spool = tmp_path / "hooks.jsonl"
     append_hook_event(spool, "session-start", session_uid="s1", ts_utc="2026-06-09T08:00:00Z")
