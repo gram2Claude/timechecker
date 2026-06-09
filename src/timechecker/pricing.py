@@ -101,6 +101,7 @@ def refresh_rates(*, data: dict | None = None, url: str | None = None,
     new: dict[str, tuple[float, float, float, float]] = {}
     for fam in _FAMILIES:
         best: tuple[float, float, float, float] | None = None
+        best_score: tuple = ()
         for key, v in data.items():
             k = str(key).lower()
             if not isinstance(v, dict) or "claude" not in k or fam not in k:
@@ -108,11 +109,16 @@ def refresh_rates(*, data: dict | None = None, url: str | None = None,
             ic, oc = v.get("input_cost_per_token"), v.get("output_cost_per_token")
             if ic is None or oc is None:
                 continue
-            cand = (float(ic) * million, float(oc) * million,
-                    float(v.get("cache_creation_input_token_cost") or 0) * million,
-                    float(v.get("cache_read_input_token_cost") or 0) * million)
-            if best is None or cand[1] > best[1]:  # max по output = топ-модель семейства
-                best = cand
+            cw = v.get("cache_creation_input_token_cost")
+            cr = v.get("cache_read_input_token_cost")
+            has_cache = cw is not None and cr is not None
+            # предпочесть записи С кэш-ставками и прямой тариф (без provider-префикса), затем
+            # макс по output — иначе можно схватить markup-вариант без кэша
+            score = (has_cache, "/" not in k, float(oc))
+            if best is None or score > best_score:
+                best_score = score
+                best = (float(ic) * million, float(oc) * million,
+                        float(cw or 0) * million, float(cr or 0) * million)
         if best is not None:
             new[fam] = best
     if not new:
