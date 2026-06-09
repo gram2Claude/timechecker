@@ -48,7 +48,7 @@
 
 ## Проверка
 - `timechecker health` — статус БД, последний `ingest_run` (ok/partial), счётчики, наличие задачи.
-- Отчёт за день — `<db_dir>/reports/<date>.md` и `.csv`.
+- Отчёт за день — `<db_dir>/reports/<date>.md` (аналитика по дням/задачам — запросом к Supabase).
 
 ## Безопасность
 - БД (`timechecker.db`) и `reports/` — на учётке сотрудника; доступ ограничить Windows-ACL.

@@ -75,7 +75,6 @@ def _cmd_report(args: argparse.Namespace, cfg: Config) -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
         md_path = out_dir / f"{date}.md"
         md_path.write_text(rep["markdown"], encoding="utf-8")
-        (out_dir / f"{date}.csv").write_text(rep["csv"], encoding="utf-8")
         log.info("report %s → %s", date, md_path)
         if args.plane_issue:
             secrets = cfg.read_wgp_secrets()
@@ -218,7 +217,7 @@ def build_parser() -> argparse.ArgumentParser:
     sched_p.add_argument("--name", default="timechecker-collect")
     sched_p.add_argument("--command", default="timechecker collect")
     sched_p.add_argument("--every", type=int, default=30, help="период, минут")
-    report_p = sub.add_parser("report", help="Дневной отчёт (markdown+CSV) из daily_*")
+    report_p = sub.add_parser("report", help="Дневной отчёт (markdown) из daily_*")
     report_p.add_argument("--date", default=None, help="YYYY-MM-DD (МСК); по умолчанию сегодня")
     report_p.add_argument("--plane-issue", default=None, help="issue для отчёта в Plane")
     sub.add_parser("health", help="Диагностика агента (БД, последний сбор, расписание)")
