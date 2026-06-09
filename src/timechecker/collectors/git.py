@@ -37,9 +37,8 @@ def parse_plane_ids(text: str) -> list[str]:
     return out
 
 
-def read_commits(git_dir: Path, *, branch: str | None = None,
-                 since: str | None = None) -> list[GitCommit]:
-    """Прочитать коммиты через ``git log`` (метаданные). Пустой список, если не репозиторий."""
+def _git_log(git_dir: Path, branch: str | None, since: str | None) -> str | None:
+    """Выполнить git log; None при ошибке (не репозиторий / нет ветки)."""
     args = ["git", "-C", str(git_dir), "log", f"--pretty=format:%H{_FS}%an{_FS}%aI{_FS}%s{_RS}"]
     if since:
         args.append(f"--since={since}")
@@ -48,11 +47,20 @@ def read_commits(git_dir: Path, *, branch: str | None = None,
     try:
         res = subprocess.run(args, capture_output=True, text=True, encoding="utf-8")
     except OSError:
-        return []
-    if res.returncode != 0:
+        return None
+    return res.stdout if res.returncode == 0 else None
+
+
+def read_commits(git_dir: Path, *, branch: str | None = None,
+                 since: str | None = None) -> list[GitCommit]:
+    """Прочитать коммиты (метаданные). Если ветки нет локально — fallback на HEAD."""
+    text = _git_log(git_dir, branch, since)
+    if text is None and branch:
+        text = _git_log(git_dir, None, since)  # ветки может не быть локально (напр. master в клоне)
+    if text is None:
         return []
     out: list[GitCommit] = []
-    for rec in res.stdout.split(_RS):
+    for rec in text.split(_RS):
         rec = rec.strip("\n")
         if not rec:
             continue

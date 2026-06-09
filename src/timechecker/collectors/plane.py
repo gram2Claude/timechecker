@@ -29,7 +29,12 @@ class PlaneHttpClient:
     def _get(self, path: str) -> Any:
         url = f"{self.base}/api/v1/workspaces/{self.ws}{path}"
         req = urllib.request.Request(  # noqa: S310 (доверенный Plane API)
-            url, headers={"X-API-Key": self.key, "Accept": "application/json"}
+            url,
+            headers={
+                "X-API-Key": self.key,
+                "Accept": "application/json",
+                "User-Agent": "timechecker/0.1.0",  # обойти Cloudflare 1010 (блок urllib UA)
+            },
         )
         with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
             data = json.loads(resp.read().decode("utf-8"))
