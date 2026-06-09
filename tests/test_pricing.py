@@ -24,7 +24,8 @@ def test_cost_usd():
         # cache: write $18.75 + read $1.50 за 1M
         assert round(cost_usd("claude-opus-4-8", 0, 0, 1_000_000, 1_000_000), 2) == 20.25
         # sonnet дешевле opus
-        assert cost_usd("claude-sonnet-4-6", 1_000_000, 0) < cost_usd("claude-opus-4-8", 1_000_000, 0)
+        assert (cost_usd("claude-sonnet-4-6", 1_000_000, 0)
+                < cost_usd("claude-opus-4-8", 1_000_000, 0))
         # неизвестная модель → дефолт (opus)
         assert cost_usd("mystery", 1_000_000, 0) == cost_usd("claude-opus-4-8", 1_000_000, 0)
     finally:
