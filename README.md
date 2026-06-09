@@ -28,7 +28,8 @@ uv sync
 | `timechecker health` | диагностика (БД, последний сбор, расписание) |
 | `timechecker prune [--days N]` | очистить сырьё старше N дней (ретеншн) |
 | `timechecker deploy [--every 30] [--report-at 23:50]` | расписание collect + дневной отчёт |
-| `timechecker migrate-db` | перенести данные SQLite → Postgres/Supabase |
+| `timechecker migrate-db` | разовый полный перенос SQLite → Postgres/Supabase |
+| `timechecker sync [--full] [--reset]` | инкрементальная репликация SQLite → Supabase (local-first) |
 | `timechecker register-project --slug … --repo-dir …` | привязать проект к учёту (git/Plane) |
 | `timechecker schedule` / `hook` / `projects` | примитивы планировщика / хуков / список проектов |
 
@@ -40,8 +41,9 @@ uv sync
 - `TIMECHECKER_PLANE_PROJECT_ID` / `_PREFIX` — проект Plane для зеркала задач/переходов
 - `TIMECHECKER_WGP_SECRETS` — путь к секретам Plane/GitHub (дефолт `~/.wgp/secrets.json`)
 - `TIMECHECKER_RETENTION_DAYS` — срок хранения сырья (дефолт 30)
-- `TIMECHECKER_BACKEND=postgres` (+ `supabase_db_url` в secrets) или `TIMECHECKER_DB_URL=postgresql://…`
-  — **явный** opt-in на облачный backend (по умолчанию SQLite); см. `docs/RUNBOOK.md`
+- **Local-first** (боевая модель): агент пишет в локальный SQLite, `timechecker sync` реплицирует в
+  Supabase (DSN `supabase_db_url` в secrets). Прямой Postgres-backend — `TIMECHECKER_BACKEND=postgres`
+  или `TIMECHECKER_DB_URL` (в local-first не используется). См. `docs/RUNBOOK.md`.
 
 Полный список — в `.env.example`.
 
@@ -52,7 +54,7 @@ uv sync
 - БД и секреты — вне публичного репозитория (`.gitignore`). Подробности — `docs/RUNBOOK.md`.
 
 ## Архитектура
-`collectors/` (Claude/hooks/git/Plane) → `storage/` (repository DAO: SQLite **или** Postgres/Supabase) →
-`metrics/` (движок) → `reporting/` (отчёт) → `ops/` (диагностика). Repository-интерфейс (`BaseSqlRepository`
-+ `SqliteRepository`/`PostgresRepository`) позволяет менять СУБД без правок коллекторов/метрик/отчётов.
-Планирование/контроль проекта — через `workflow_global_plan` (Plane + merge-гейт).
+**Local-first:** `collectors/` (Claude/hooks/git/Plane) → `storage/` (repository DAO, локальный SQLite) →
+`metrics/` (движок) → `reporting/` (отчёт) → `ops/` (диагностика); поверх — `sync` (репликация SQLite →
+Supabase). Repository-интерфейс (`BaseSqlRepository` + `SqliteRepository`/`PostgresRepository`) позволяет
+менять СУБД без правок коллекторов/метрик/отчётов. Планирование/контроль — через `workflow_global_plan`.
