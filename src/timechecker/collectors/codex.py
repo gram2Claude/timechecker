@@ -18,10 +18,29 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 DEFAULT_CODEX_SINCE = "2026-06-01"
+# дешёвый фильтр по дате каталога пропускает и недавние ПРОШЛЫЕ дни: сессия, начатая до окна,
+# но ещё активная в нём, должна дозреть (повторный collect обновляет meta события)
+_PATH_MARGIN_DAYS = 3
+
+
+def _ts(value: str | None) -> datetime | None:
+    """ISO-таймстемп (Z/офсет/только дата) → aware UTC; битый/пустой → None.
+
+    Сравнение строк лексикографически ловит ловушку `08:00:00.100Z < 08:00:00Z`
+    (точка сортируется раньше Z) — поэтому сравниваем только распарсенные значения.
+    """
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
 
 
 @dataclass
@@ -96,21 +115,36 @@ def parse_rollout(path: Path) -> CodexSession | None:
 
 
 def iter_sessions(sessions_dir: Path, *, since: str | None = None) -> list[CodexSession]:
-    """Все сессии под ``sessions_dir`` (структура ГГГГ/ММ/ДД); фильтр по дате каталога."""
+    """Все сессии под ``sessions_dir`` (структура ГГГГ/ММ/ДД), активные начиная с ``since``.
+
+    Сессия включается, если она НАЧАЛАСЬ или ЗАКОНЧИЛАСЬ в окне (вторая часть — «дозревание»
+    длинных сессий: collect повторно подхватывает выросший rollout и апсертит итог).
+    Таймстемпы парсятся (не строковое сравнение). Фильтр по дате каталога — с запасом
+    ``_PATH_MARGIN_DAYS`` (более старые длинные сессии перестают дозревать — RUNBOOK).
+    """
     out: list[CodexSession] = []
     if not sessions_dir.exists():
         return out
-    since_date = (since or "")[:10]
+    since_dt = _ts(since)
+    path_floor = ((since_dt - timedelta(days=_PATH_MARGIN_DAYS)).date().isoformat()
+                  if since_dt else "")
     for f in sorted(sessions_dir.rglob("rollout-*.jsonl")):
         try:  # дешёвый фильтр по ГГГГ/ММ/ДД в пути — не читая файл
             y, m, d = f.parent.parts[-3], f.parent.parts[-2], f.parent.parts[-1]
-            if since_date and f"{y}-{m}-{d}" < since_date:
+            if path_floor and f"{y}-{m}-{d}" < path_floor:
                 continue
         except IndexError:
             pass  # нестандартный путь — парсим без фильтра
         s = parse_rollout(f)
-        if s is not None and (not since or s.started_at >= since):
-            out.append(s)
+        if s is None:
+            continue
+        if since_dt is not None:
+            started, ended = _ts(s.started_at), _ts(s.ended_at)
+            in_window = ((started is None or started >= since_dt)
+                         or (ended is not None and ended >= since_dt))
+            if not in_window:
+                continue
+        out.append(s)
     return out
 
 

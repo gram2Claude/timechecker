@@ -118,13 +118,12 @@ def _cmd_daily(args: argparse.Namespace, cfg: Config) -> int:
     а поздние Claude-сообщения через полночь меняют вчерашние агрегаты.
     """
     date = getattr(args, "date", None)
+    rc0 = 0
     if date is None:
         today = (datetime.now(UTC) + timedelta(hours=3)).date()
-        yesterday = (today - timedelta(days=1)).isoformat()
-        rc0 = _cmd_metrics(argparse.Namespace(date=yesterday), cfg)
+        yns = argparse.Namespace(date=(today - timedelta(days=1)).isoformat(), plane_issue=None)
+        rc0 = _cmd_metrics(yns, cfg) or _cmd_report(yns, cfg)  # вчерашний md тоже актуализируем
         date = today.isoformat()
-    else:
-        rc0 = 0
     ns = argparse.Namespace(date=date, plane_issue=None)
     rc1 = _cmd_metrics(ns, cfg)
     rc2 = _cmd_report(ns, cfg)

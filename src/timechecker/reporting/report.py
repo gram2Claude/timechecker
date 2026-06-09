@@ -22,9 +22,9 @@ def _usd(x: Any) -> str:
 
 
 def _models(summary: dict) -> str:
-    """Список моделей с tier-ярлыком: ' · модели: opus (high), gpt-5.5 (high)'."""
+    """Список моделей с tier-ярлыком: 'opus (high), gpt-5.5 (high)' (все агенты дня)."""
     fams = [f.strip() for f in (summary.get("models") or "").split(",") if f.strip()]
-    return " · модели: " + ", ".join(f"{f} ({model_tier(f)})" for f in fams) if fams else ""
+    return ", ".join(f"{f} ({model_tier(f)})" for f in fams)
 
 
 def _by_source(usage_rows: list[dict]) -> dict[str, dict]:
@@ -97,7 +97,7 @@ def render_markdown(work_date: str, summary: dict | None, tasks: list[dict],
         lines.append(
             f"- **Claude:** {cl['messages']} сообщ., {cl['tokens']} токенов "
             f"(кэш: {cl['cache_read']} чит. / {cl['cache_creation']} зап.) · "
-            f"**≈ API-эквивалент {_usd(cl['cost_usd'])}**{_models(s)}")
+            f"**≈ API-эквивалент {_usd(cl['cost_usd'])}**")
     cx = src.get("codex")
     if cx:
         lines.append(
@@ -112,6 +112,9 @@ def render_markdown(work_date: str, summary: dict | None, tasks: list[dict],
     if len(src) > 1:
         total = sum(v["cost_usd"] for v in src.values())
         lines.append(f"- **Всего ИИ:** ≈ API-эквивалент {_usd(total)}")
+    models = _models(s)
+    if models:  # отдельной строкой: видно и в дни «только codex» (не привязано к Claude)
+        lines.append(f"- **Модели:** {models}")
     lines += [
         f"- **Коммитов:** {s.get('commits', 0)} · **гигиена:** {s.get('hygiene_score', 0)} "
         f"(доля с PLANE-ID)",

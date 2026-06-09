@@ -155,6 +155,7 @@ class BaseSqlRepository(Repository):
         sql = ("INSERT INTO activity_event(employee_id, project_id, task_id, source, event_type, "
                "ts_utc, external_id, meta_json, ingest_run_id) VALUES(?,?,?,?,?,?,?,?,?) "
                "ON CONFLICT(source, external_id) DO UPDATE SET "
+               "project_id=COALESCE(excluded.project_id, activity_event.project_id), "
                "task_id=COALESCE(excluded.task_id, activity_event.task_id), "
                "meta_json=COALESCE(excluded.meta_json, activity_event.meta_json)")
         params = (employee_id, project_id, task_id, source, event_type, ts_utc, external_id,

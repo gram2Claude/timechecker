@@ -3,6 +3,10 @@
 Копирует все таблицы с сохранением id (Postgres-схема — IDENTITY BY DEFAULT, допускает явный id),
 батч-вставкой (``executemany``), идемпотентно (``ON CONFLICT DO NOTHING``), затем выравнивает
 IDENTITY-секвенсы под max(id). Порядок таблиц учитывает внешние ключи.
+
+⚠️ Запускать только в ПУСТУЮ целевую схему: daily-таблицы в облаке, наполненном sync'ом, имеют
+свои IDENTITY-id (sync вставляет без id) — ``ON CONFLICT DO NOTHING`` по несовпадающим id даст
+молчаливые дубли. (Следующий ``sync`` самовосстановит daily через delete-replace по дням.)
 """
 
 from __future__ import annotations
