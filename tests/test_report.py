@@ -29,9 +29,6 @@ def test_build_daily_report(tmp_path):
     assert "$4.25" in md  # стоимость токенов
     assert "кэш: 900000 чит." in md  # кэш-токены отдельно
     assert "opus (high)" in md  # модель + tier-ярлык
-    assert "work_date,task,active_minutes" in rep["csv"]
-    assert "claude_cost_usd" in rep["csv"]
-    assert "TIME-1" in rep["csv"]
     assert report_html(md).startswith("<pre>")
     r.close()
 

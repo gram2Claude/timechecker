@@ -1,9 +1,7 @@
-"""Дневной отчёт (E4, TIME-25): daily_* → markdown + CSV + HTML (для Plane-комментария)."""
+"""Дневной отчёт (E4, TIME-25): daily_* → markdown + HTML (для Plane-комментария)."""
 
 from __future__ import annotations
 
-import csv
-import io
 from html import escape
 from typing import Any
 
@@ -30,7 +28,7 @@ def _models(summary: dict) -> str:
 
 
 def build_daily_report(repo: Any, employee_id: int, work_date: str) -> dict:
-    """Собрать дневной отчёт из daily_*: markdown, csv и структурированные данные."""
+    """Собрать дневной отчёт из daily_*: markdown + структурированные данные."""
     summary = repo.get_daily_summary(employee_id, work_date)
     tasks = repo.daily_task_times(employee_id, work_date)
     idles = repo.daily_idles(employee_id, work_date)
@@ -40,7 +38,6 @@ def build_daily_report(repo: Any, employee_id: int, work_date: str) -> dict:
         "tasks": tasks,
         "idle": idles,
         "markdown": render_markdown(work_date, summary, tasks, idles),
-        "csv": render_csv(work_date, tasks),
     }
 
 
@@ -87,22 +84,6 @@ def render_markdown(work_date: str, summary: dict | None,
             for e in idles
         ]
     return "\n".join(lines) + "\n"
-
-
-def render_csv(work_date: str, tasks: list[dict]) -> str:
-    buf = io.StringIO()
-    w = csv.writer(buf)
-    w.writerow(["work_date", "task", "active_minutes", "est_h", "claude_messages",
-                "claude_tokens", "claude_cache_read", "claude_cache_creation",
-                "claude_cost_usd", "commits"])
-    for t in tasks:
-        est = t.get("est_h")
-        w.writerow([work_date, t.get("plane_identifier") or "", t.get("active_minutes") or 0,
-                    est if est is not None else "", t.get("claude_messages") or 0,
-                    t.get("claude_tokens") or 0, t.get("claude_cache_read") or 0,
-                    t.get("claude_cache_creation") or 0, t.get("claude_cost_usd") or 0,
-                    t.get("commits") or 0])
-    return buf.getvalue()
 
 
 def report_html(markdown: str) -> str:

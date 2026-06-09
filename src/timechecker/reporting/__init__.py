@@ -1,4 +1,4 @@
-"""Отчётность timechecker (E4): daily_* → дневной отчёт (markdown / CSV / HTML)."""
+"""Отчётность timechecker (E4): daily_* → дневной отчёт (markdown / HTML)."""
 
 from __future__ import annotations
 

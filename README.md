@@ -9,7 +9,7 @@
   (с `PLANE-ID`), переходы статусов Plane. Хранилище — SQLite (нейтрально к серверной БД).
 - **Метрики** за день: задачи и время на задачу, простои ≥30 мин, span, active/gap, effort (токены),
   фрагментация, adherence (vs план), гигиена процесса.
-- **Отчёт**: markdown + CSV; опционально комментарий в Plane.
+- **Отчёт**: markdown; опционально комментарий в Plane (аналитика — запросом к Supabase).
 - **Эксплуатация**: расписание (Task Scheduler), диагностика, ретеншн.
 
 ## Установка
@@ -24,7 +24,7 @@ uv sync
 | `timechecker initdb` | создать/мигрировать БД (применить схему) |
 | `timechecker collect` | собрать output-сигналы в БД (Claude/hooks/git/Plane) |
 | `timechecker metrics [--date YYYY-MM-DD]` | посчитать дневные метрики → `daily_*` |
-| `timechecker report [--date] [--plane-issue ID]` | дневной отчёт (md+CSV), опц. в Plane |
+| `timechecker report [--date] [--plane-issue ID]` | дневной отчёт (markdown), опц. в Plane |
 | `timechecker health` | диагностика (БД, последний сбор, расписание) |
 | `timechecker prune [--days N]` | очистить сырьё старше N дней (ретеншн) |
 | `timechecker deploy [--every 30] [--report-at 23:50]` | расписание collect + дневной отчёт |
