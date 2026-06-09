@@ -31,6 +31,7 @@ def test_pricing_override(monkeypatch, tmp_path):
     import json
 
     import timechecker.pricing as pr
+    saved = dict(pr.RATES)
     f = tmp_path / "pricing.json"
     f.write_text(json.dumps({"opus": [1, 2, 3, 4]}), encoding="utf-8")
     monkeypatch.setenv("TIMECHECKER_PRICING", str(f))
@@ -38,4 +39,34 @@ def test_pricing_override(monkeypatch, tmp_path):
     try:
         assert round(cost_usd("claude-opus-4-8", 1_000_000, 1_000_000), 2) == 3.0  # 1 + 2
     finally:
-        pr._loaded = False  # не влиять на другие тесты
+        pr.RATES.clear()
+        pr.RATES.update(saved)
+        pr._loaded = False
+
+
+def test_refresh_rates(tmp_path):
+    import json
+
+    import timechecker.pricing as pr
+    from timechecker.pricing import refresh_rates
+    data = {
+        "claude-opus-4-1": {"input_cost_per_token": 0.000015, "output_cost_per_token": 0.000075,
+                            "cache_creation_input_token_cost": 0.00001875,
+                            "cache_read_input_token_cost": 0.0000015},
+        "claude-sonnet-4-5": {"input_cost_per_token": 0.000003, "output_cost_per_token": 0.000015},
+        "gpt-4o": {"input_cost_per_token": 0.0000025, "output_cost_per_token": 0.00001},
+        "bad": "не словарь",
+    }
+    out = tmp_path / "pricing.json"
+    saved = dict(pr.RATES)
+    try:
+        new = refresh_rates(data=data, write_path=str(out))
+    finally:
+        pr.RATES.clear()
+        pr.RATES.update(saved)
+        pr._loaded = False
+    assert round(new["opus"][0], 2) == 15.0 and round(new["opus"][1], 2) == 75.0
+    assert round(new["opus"][3], 2) == 1.5  # cache_read за 1M
+    assert "sonnet" in new and "haiku" not in new  # haiku нет в датасете → не трогаем
+    saved_json = json.loads(out.read_text(encoding="utf-8"))
+    assert "opus" in saved_json and "gpt-4o" not in saved_json  # только Claude-семейства

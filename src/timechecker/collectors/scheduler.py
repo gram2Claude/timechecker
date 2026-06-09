@@ -46,6 +46,23 @@ def register_daily_task(task_name: str, command: str, at_time: str = "23:50") ->
     return res.returncode
 
 
+def build_schtasks_weekly_args(task_name: str, command: str, day: str, at_time: str) -> list[str]:
+    """Аргументы schtasks для еженедельной задачи (день недели MON/TUE/… + HH:MM)."""
+    return ["schtasks", "/Create", "/F", "/SC", "WEEKLY", "/D", day, "/ST", at_time,
+            "/TN", task_name, "/TR", command]
+
+
+def register_weekly_task(task_name: str, command: str, *, day: str = "MON",
+                         at_time: str = "06:00") -> int:
+    """Зарегистрировать еженедельную задачу через schtasks. Возвращает returncode."""
+    try:
+        res = subprocess.run(build_schtasks_weekly_args(task_name, command, day, at_time),
+                             capture_output=True)
+    except OSError:
+        return 1
+    return res.returncode
+
+
 def task_exists(task_name: str) -> bool:
     """Проверить наличие задачи в Task Scheduler."""
     try:
