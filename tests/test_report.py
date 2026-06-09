@@ -29,6 +29,7 @@ def test_build_daily_report(tmp_path):
     assert "$4.25" in md  # стоимость токенов
     assert "кэш: 900000 чит." in md  # кэш-токены отдельно
     assert "opus (high)" in md  # модель + tier-ярлык
+    assert "API-эквивалент" in md  # стоимость помечена как API-эквивалент, а не реальный счёт
     assert report_html(md).startswith("<pre>")
     r.close()
 
