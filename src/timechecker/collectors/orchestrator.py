@@ -1,8 +1,9 @@
 """Оркестратор сбора (TIME-15): один прогон всех настроенных коллекторов в рамках ingest_run.
 
-Идемпотентно: повторный ``collect_all`` не плодит дубли. Источники по конфигу:
-Claude и хуки — всегда; git — при ``monitored_repo_dir``; Plane — при наличии creds и project_id.
-Сбой одного коллектора **изолируется** (логируется в ingest_run.error), прогон не падает.
+Идемпотентно: повторный ``collect_all`` не плодит дубли. Claude и хуки — всегда (глобально).
+git/Plane — по каждому проекту из конфига (env) и из реестра ``projects.json``. На каждый проект
+Plane идёт ПЕРЕД git (задачи зеркалятся → commit_task-связи находят task_id). Сбой коллектора
+изолируется (ingest_run.error), прогон не падает. Счётчики суммируются.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 from ..config import Config
+from ..registry import load_projects
 from ..storage import SqliteRepository
 from .claude import ClaudeCollector
 from .git import GitCollector
@@ -19,25 +21,43 @@ from .hooks import HookCollector
 from .plane import PlaneCollector, PlaneHttpClient
 
 
+def _merge(dst: dict, src: dict) -> None:
+    for k, v in src.items():
+        if isinstance(v, (int, float)) and isinstance(dst.get(k), (int, float)):
+            dst[k] += v
+        else:
+            dst[k] = v
+
+
+def _sources(cfg: Config) -> list[dict]:
+    """Список проектов для git/Plane: из конфига (env) + из реестра (дедуп по slug)."""
+    out: list[dict] = []
+    if cfg.plane_project_id or cfg.github_repo or cfg.project_slug or cfg.monitored_repo_dir:
+        slug = cfg.project_slug or (cfg.github_repo or "monitored").split("/")[-1]
+        out.append({
+            "slug": slug, "repo": cfg.github_repo,
+            "repo_dir": str(cfg.monitored_repo_dir) if cfg.monitored_repo_dir else None,
+            "branch": cfg.monitored_repo_branch, "plane_project_id": cfg.plane_project_id,
+            "plane_prefix": cfg.plane_identifier_prefix,
+        })
+    for proj in load_projects(cfg.db_path):
+        if not any(s["slug"] == proj.get("slug") for s in out):
+            out.append(proj)
+    return out
+
+
 def collect_all(cfg: Config, *, since: str | None = None) -> dict:
-    """Прогнать все настроенные коллекторы; вернуть сводные счётчики (+ errors при сбоях)."""
+    """Прогнать все настроенные коллекторы по всем проектам; вернуть сводные счётчики."""
     repo = SqliteRepository.open(cfg.db_path)
     try:
         emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)
-        project_id = None
-        if cfg.plane_project_id or cfg.github_repo or cfg.project_slug:
-            slug = cfg.project_slug or (cfg.github_repo or "monitored").split("/")[-1]
-            project_id = repo.upsert_project(
-                slug, repo=cfg.github_repo, plane_project_id=cfg.plane_project_id,
-                plane_identifier=cfg.plane_identifier_prefix,
-            )
         run = repo.start_ingest_run(emp, sources="claude,hook,git,plane")
         counts: dict[str, Any] = {}
         errors: dict[str, str] = {}
 
         def _run(name: str, fn: Callable[[], dict]) -> None:
             try:
-                counts.update(fn())
+                _merge(counts, fn())
             except Exception as e:  # изоляция: сбой одного коллектора не рушит прогон
                 errors[name] = f"{type(e).__name__}: {e}"
 
@@ -45,27 +65,33 @@ def collect_all(cfg: Config, *, since: str | None = None) -> dict:
             emp, since=since, ingest_run_id=run))
         _run("hook", lambda: HookCollector(repo, cfg.db_path.parent / "hooks.jsonl").collect(
             emp, since=since, ingest_run_id=run))
+
         secrets = cfg.read_wgp_secrets()
-        if cfg.plane_project_id and secrets.get("plane_api_key"):
-            client = PlaneHttpClient(
-                secrets.get("plane_base_url", "https://api.plane.so"),
-                secrets["plane_api_key"], secrets.get("plane_workspace_slug", ""),
-                cfg.plane_project_id,
+        for proj in _sources(cfg):
+            pid = repo.upsert_project(
+                proj["slug"], repo=proj.get("repo"),
+                plane_project_id=proj.get("plane_project_id"),
+                plane_identifier=proj.get("plane_prefix"),
             )
-            _run("plane", lambda: PlaneCollector(
-                repo, client, plane_identifier_prefix=cfg.plane_identifier_prefix or "",
-            ).collect(emp, project_id=project_id, ingest_run_id=run))
-        # git ПОСЛЕ Plane: задачи уже зазеркалены → commit_task-связи находят task_id
-        if cfg.monitored_repo_dir:
-            _run("git", lambda: GitCollector(repo, cfg.monitored_repo_dir).collect(
-                emp, project_id=project_id, branch=cfg.monitored_repo_branch,
-                since=since, ingest_run_id=run))
+            if proj.get("plane_project_id") and secrets.get("plane_api_key"):
+                client = PlaneHttpClient(
+                    secrets.get("plane_base_url", "https://api.plane.so"),
+                    secrets["plane_api_key"], secrets.get("plane_workspace_slug", ""),
+                    proj["plane_project_id"])
+                prefix = proj.get("plane_prefix") or ""
+                _run(f"plane:{proj['slug']}", lambda client=client, pid=pid, prefix=prefix:
+                     PlaneCollector(repo, client, plane_identifier_prefix=prefix)
+                     .collect(emp, project_id=pid, ingest_run_id=run))
+            if proj.get("repo_dir"):
+                _run(f"git:{proj['slug']}", lambda proj=proj, pid=pid:
+                     GitCollector(repo, proj["repo_dir"]).collect(
+                         emp, project_id=pid, branch=proj.get("branch"),
+                         since=since, ingest_run_id=run))
 
         status = "ok" if not errors else "partial"
         repo.finish_ingest_run(
             run, status, error=json.dumps(errors, ensure_ascii=False) if errors else None,
-            counts=counts,
-        )
+            counts=counts)
         if errors:
             counts["errors"] = errors
         return counts

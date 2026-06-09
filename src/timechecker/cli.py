@@ -16,6 +16,7 @@ from .config import Config
 from .logging_setup import get_logger, setup_logging
 from .metrics import compute_day
 from .ops import health_check
+from .registry import load_projects, register_project, registry_path
 from .reporting import build_daily_report, report_html
 from .storage import SqliteRepository, current_version, init_db
 
@@ -117,6 +118,21 @@ def _cmd_deploy(args: argparse.Namespace, cfg: Config) -> int:
     return 0 if rc1 == 0 and rc2 == 0 else 1
 
 
+def _cmd_register_project(args: argparse.Namespace, cfg: Config) -> int:
+    projects = register_project(
+        cfg.db_path, slug=args.slug, repo_dir=args.repo_dir, branch=args.branch,
+        plane_project_id=args.plane_project_id, plane_prefix=args.plane_prefix)
+    log.info("register-project: '%s' привязан; проектов: %s → %s",
+             args.slug, len(projects), registry_path(cfg.db_path))
+    return 0
+
+
+def _cmd_projects(args: argparse.Namespace, cfg: Config) -> int:
+    projects = load_projects(cfg.db_path)
+    log.info("projects (%s): %s", len(projects), json.dumps(projects, ensure_ascii=False))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="timechecker",
@@ -156,6 +172,13 @@ def build_parser() -> argparse.ArgumentParser:
     deploy_p = sub.add_parser("deploy", help="Развернуть агент (Task Scheduler: collect + report)")
     deploy_p.add_argument("--every", type=int, default=30, help="период collect, минут")
     deploy_p.add_argument("--report-at", default="23:50", help="время дневного отчёта HH:MM")
+    rp = sub.add_parser("register-project", help="Привязать проект к учёту времени (git/Plane)")
+    rp.add_argument("--slug", required=True)
+    rp.add_argument("--repo-dir", default=None)
+    rp.add_argument("--branch", default=None)
+    rp.add_argument("--plane-project-id", default=None)
+    rp.add_argument("--plane-prefix", default=None)
+    sub.add_parser("projects", help="Список привязанных проектов")
     return p
 
 
@@ -176,6 +199,8 @@ def main(argv: list[str] | None = None) -> int:
         "health": _cmd_health,
         "prune": _cmd_prune,
         "deploy": _cmd_deploy,
+        "register-project": _cmd_register_project,
+        "projects": _cmd_projects,
     }
     return handlers[args.command](args, cfg)
 
