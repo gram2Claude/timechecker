@@ -12,7 +12,7 @@ from . import __version__
 from .collectors.hooks import HOOK_EVENTS, append_hook_event
 from .collectors.orchestrator import collect_all
 from .collectors.plane import PlaneHttpClient
-from .collectors.scheduler import register_daily_task, register_task
+from .collectors.scheduler import register_daily_task, register_task, register_weekly_task
 from .config import Config
 from .logging_setup import get_logger, setup_logging
 from .metrics import compute_day
@@ -127,11 +127,21 @@ def _cmd_deploy(args: argparse.Namespace, cfg: Config) -> int:
     has_cloud = bool(cfg.supabase_dsn())
     if has_cloud:  # local-first: collect/metrics/report → SQLite, sync → Supabase
         rc3 = register_task("timechecker-sync", f'"{exe}" sync', args.sync_every)
-    log.info("deploy: collect/%sмин rc=%s; daily @%s rc=%s; sync/%s rc=%s; exe=%s",
-             args.every, rc1, args.report_at, rc2,
-             f"{args.sync_every}мин" if has_cloud else "off", rc3, exe)
-    log.info("deploy: collect/metrics/report → SQLite; sync → Supabase. Проверь 'health'.")
-    return 0 if rc1 == 0 and rc2 == 0 and rc3 == 0 else 1
+    rc4 = register_weekly_task("timechecker-pricing-refresh", f'"{exe}" pricing-refresh')
+    log.info("deploy rc: collect=%s daily=%s sync=%s pricing=%s | exe=%s", rc1, rc2, rc3, rc4, exe)
+    log.info("deploy: SQLite-агент + sync→Supabase + pricing weekly. Проверь 'health'.")
+    return 0 if rc1 == 0 and rc2 == 0 and rc3 == 0 and rc4 == 0 else 1
+
+
+def _cmd_pricing_refresh(args: argparse.Namespace, cfg: Config) -> int:
+    from .pricing import refresh_rates
+    try:
+        new = refresh_rates()
+    except Exception as e:
+        log.error("pricing-refresh: не удалось (%s); текущие ставки сохранены", e)
+        return 1
+    log.info("pricing-refresh: ставки обновлены из LiteLLM → %s", new)
+    return 0
 
 
 def _cmd_register_project(args: argparse.Namespace, cfg: Config) -> int:
@@ -240,6 +250,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync_p = sub.add_parser("sync", help="Реплицировать SQLite → Supabase (инкрементально)")
     sync_p.add_argument("--full", action="store_true", help="полная репликация (все строки)")
     sync_p.add_argument("--reset", action="store_true", help="TRUNCATE Supabase + ресед")
+    sub.add_parser("pricing-refresh", help="Обновить ставки токенов из LiteLLM")
     return p
 
 
@@ -265,6 +276,7 @@ def main(argv: list[str] | None = None) -> int:
         "projects": _cmd_projects,
         "migrate-db": _cmd_migrate_db,
         "sync": _cmd_sync,
+        "pricing-refresh": _cmd_pricing_refresh,
     }
     return handlers[args.command](args, cfg)
 

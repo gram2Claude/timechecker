@@ -30,6 +30,7 @@ uv sync
 | `timechecker deploy [--every 30] [--report-at 23:50]` | расписание collect + дневной отчёт |
 | `timechecker migrate-db` | разовый полный перенос SQLite → Postgres/Supabase |
 | `timechecker sync [--full] [--reset]` | инкрементальная репликация SQLite → Supabase (local-first) |
+| `timechecker pricing-refresh` | обновить ставки токенов из LiteLLM → `~/.wgp/pricing.json` |
 | `timechecker register-project --slug … --repo-dir …` | привязать проект к учёту (git/Plane) |
 | `timechecker schedule` / `hook` / `projects` | примитивы планировщика / хуков / список проектов |
 
@@ -41,6 +42,9 @@ uv sync
 - `TIMECHECKER_PLANE_PROJECT_ID` / `_PREFIX` — проект Plane для зеркала задач/переходов
 - `TIMECHECKER_WGP_SECRETS` — путь к секретам Plane/GitHub (дефолт `~/.wgp/secrets.json`)
 - `TIMECHECKER_RETENTION_DAYS` — срок хранения сырья (дефолт 30)
+- **Стоимость токенов** — оценка `≈ API-эквивалент` (model-aware, по семействам opus/sonnet/haiku);
+  ставки: дефолт + override `~/.wgp/pricing.json` (или `TIMECHECKER_PRICING`), обновляются
+  `pricing-refresh` из LiteLLM (еженедельно через `deploy`). При подписке это бенчмарк, не счёт.
 - **Local-first** (боевая модель): агент пишет в локальный SQLite, `timechecker sync` реплицирует в
   Supabase (DSN `supabase_db_url` в secrets). Прямой Postgres-backend — `TIMECHECKER_BACKEND=postgres`
   или `TIMECHECKER_DB_URL` (в local-first не используется). См. `docs/RUNBOOK.md`.
