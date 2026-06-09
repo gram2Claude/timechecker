@@ -18,15 +18,18 @@ from .metrics import compute_day
 from .ops import health_check
 from .registry import load_projects, register_project, registry_path
 from .reporting import build_daily_report, report_html
-from .storage import SqliteRepository, current_version, init_db
+from .storage import SqliteRepository, open_repository
 
 log = get_logger("timechecker.cli")
 
 
 def _cmd_initdb(args: argparse.Namespace, cfg: Config) -> int:
-    conn = init_db(cfg.db_path)
-    log.info("initdb: схема применена (версия %s) → %s", current_version(conn), cfg.db_path)
-    conn.close()
+    repo = open_repository(cfg)
+    try:
+        log.info("initdb: схема применена (версия %s), backend=%s",
+                 repo.schema_version(), "postgres" if cfg.db_url else "sqlite")
+    finally:
+        repo.close()
     return 0
 
 
@@ -45,7 +48,7 @@ def _cmd_collect(args: argparse.Namespace, cfg: Config) -> int:
 
 def _cmd_metrics(args: argparse.Namespace, cfg: Config) -> int:
     date = args.date or (datetime.now(UTC) + timedelta(hours=3)).date().isoformat()
-    repo = SqliteRepository.open(cfg.db_path)
+    repo = open_repository(cfg)
     try:
         emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)
         res = compute_day(repo, emp, date)
@@ -63,7 +66,7 @@ def _cmd_schedule(args: argparse.Namespace, cfg: Config) -> int:
 
 def _cmd_report(args: argparse.Namespace, cfg: Config) -> int:
     date = args.date or (datetime.now(UTC) + timedelta(hours=3)).date().isoformat()
-    repo = SqliteRepository.open(cfg.db_path)
+    repo = open_repository(cfg)
     try:
         emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)
         rep = build_daily_report(repo, emp, date)
@@ -88,7 +91,7 @@ def _cmd_report(args: argparse.Namespace, cfg: Config) -> int:
 
 
 def _cmd_health(args: argparse.Namespace, cfg: Config) -> int:
-    repo = SqliteRepository.open(cfg.db_path)
+    repo = open_repository(cfg)
     try:
         log.info("health: %s", json.dumps(health_check(repo, cfg), ensure_ascii=False))
     finally:
@@ -99,7 +102,7 @@ def _cmd_health(args: argparse.Namespace, cfg: Config) -> int:
 def _cmd_prune(args: argparse.Namespace, cfg: Config) -> int:
     days = args.days if args.days is not None else cfg.retention_days
     cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    repo = SqliteRepository.open(cfg.db_path)
+    repo = open_repository(cfg)
     try:
         deleted = repo.prune_raw(cutoff)
         log.info("prune: удалено %s сырых записей старше %s (%s дн)", deleted, cutoff, days)
@@ -130,6 +133,22 @@ def _cmd_register_project(args: argparse.Namespace, cfg: Config) -> int:
 def _cmd_projects(args: argparse.Namespace, cfg: Config) -> int:
     projects = load_projects(cfg.db_path)
     log.info("projects (%s): %s", len(projects), json.dumps(projects, ensure_ascii=False))
+    return 0
+
+
+def _cmd_migrate_db(args: argparse.Namespace, cfg: Config) -> int:
+    if not cfg.db_url:
+        log.error("migrate-db: db_url не задан (supabase_db_url в secrets / TIMECHECKER_DB_URL)")
+        return 1
+    from .storage.migrate import migrate_sqlite_to_postgres
+    src = SqliteRepository.open(cfg.db_path)
+    dst = open_repository(cfg)
+    try:
+        counts = migrate_sqlite_to_postgres(src, dst)
+        log.info("migrate-db: перенесено в Postgres %s", counts)
+    finally:
+        src.close()
+        dst.close()
     return 0
 
 
@@ -179,6 +198,7 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--plane-project-id", default=None)
     rp.add_argument("--plane-prefix", default=None)
     sub.add_parser("projects", help="Список привязанных проектов")
+    sub.add_parser("migrate-db", help="Перенести данные SQLite → Postgres (по db_url)")
     return p
 
 
@@ -201,6 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         "deploy": _cmd_deploy,
         "register-project": _cmd_register_project,
         "projects": _cmd_projects,
+        "migrate-db": _cmd_migrate_db,
     }
     return handlers[args.command](args, cfg)
 

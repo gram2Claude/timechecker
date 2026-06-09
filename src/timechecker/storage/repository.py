@@ -126,6 +126,9 @@ class Repository(ABC):
     def stats(self) -> dict: ...
 
     @abstractmethod
+    def schema_version(self) -> int: ...
+
+    @abstractmethod
     def prune_raw(self, before_utc: str) -> int: ...
 
     @abstractmethod
