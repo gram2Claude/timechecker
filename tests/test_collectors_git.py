@@ -40,6 +40,13 @@ def test_read_commits_non_repo(tmp_path):
     assert read_commits(tmp_path / "nope") == []
 
 
+def test_read_commits_branch_fallback(tmp_path):
+    repo_dir = tmp_path / "work"
+    _make_repo(repo_dir)
+    # несуществующая ветка → fallback на HEAD
+    assert len(read_commits(repo_dir, branch="does-not-exist")) == 2
+
+
 def test_git_collector_writes_idempotent(tmp_path):
     repo_dir = tmp_path / "work"
     _make_repo(repo_dir)

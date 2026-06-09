@@ -1,4 +1,5 @@
 import json
+import subprocess
 
 from timechecker.collectors.orchestrator import collect_all
 from timechecker.collectors.scheduler import build_schtasks_args
@@ -33,3 +34,32 @@ def test_build_schtasks_args():
     assert args[0] == "schtasks"
     assert "/Create" in args and "/SC" in args and "MINUTE" in args
     assert "30" in args and "tc" in args and "timechecker collect" in args
+
+
+def test_collect_all_with_git_and_branch_fallback(tmp_path, monkeypatch):
+    projects = tmp_path / "projects"
+    (projects / "p1").mkdir(parents=True)
+    (projects / "p1" / "t.jsonl").write_text(_TRANSCRIPT, encoding="utf-8")
+    work = tmp_path / "work"
+    work.mkdir()
+
+    def g(*a: str) -> None:
+        subprocess.run(["git", "-C", str(work), *a], check=True, capture_output=True, text=True)
+
+    g("init", "-q")
+    g("config", "user.email", "t@example.com")
+    g("config", "user.name", "Tester")
+    (work / "f").write_text("1", encoding="utf-8")
+    g("add", "-A")
+    g("commit", "-q", "-m", "x (TIME-9)")
+
+    monkeypatch.setenv("TIMECHECKER_DB_PATH", str(tmp_path / "db.sqlite"))
+    monkeypatch.setenv("TIMECHECKER_CLAUDE_PROJECTS_DIR", str(projects))
+    monkeypatch.setenv("TIMECHECKER_MONITORED_REPO_DIR", str(work))
+    monkeypatch.setenv("TIMECHECKER_MONITORED_REPO_BRANCH", "nonexistent")  # тест fallback
+    monkeypatch.setenv("TIMECHECKER_WGP_SECRETS", str(tmp_path / "none.json"))
+    cfg = Config.load()
+    counts = collect_all(cfg)
+    assert counts["events"] == 2
+    assert counts["commits"] == 1  # fallback на HEAD несмотря на неверную ветку
+    assert "errors" not in counts
