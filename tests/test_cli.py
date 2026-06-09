@@ -9,7 +9,10 @@ def test_help_exits_zero():
     assert exc.value.code == 0
 
 
-def test_collect_stub_returns_zero():
+def test_collect_returns_zero(tmp_path, monkeypatch):
+    # изолируем: пустой каталог проектов + temp БД — без чтения реальных транскриптов
+    monkeypatch.setenv("TIMECHECKER_DB_PATH", str(tmp_path / "db.sqlite"))
+    monkeypatch.setenv("TIMECHECKER_CLAUDE_PROJECTS_DIR", str(tmp_path / "no_projects"))
     assert main(["collect"]) == 0
 
 
