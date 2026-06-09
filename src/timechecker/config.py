@@ -58,8 +58,11 @@ class Config:
             "TIMECHECKER_DB_PATH", str(claude_home / "timechecker" / "timechecker.db")
         )
         repo_dir = _env("TIMECHECKER_MONITORED_REPO_DIR", None)
+        # Postgres — ЯВНЫЙ opt-in: либо полный DSN в TIMECHECKER_DB_URL, либо
+        # TIMECHECKER_BACKEND=postgres (тогда DSN берётся из secrets supabase_db_url).
+        # По умолчанию (даже при наличии supabase_db_url в secrets) — SQLite.
         db_url = _env("TIMECHECKER_DB_URL", None)
-        if not db_url:
+        if not db_url and (_env("TIMECHECKER_BACKEND", "") or "").lower() == "postgres":
             try:
                 raw = Path(secrets).read_text(encoding="utf-8")
                 db_url = json.loads(raw).get("supabase_db_url")

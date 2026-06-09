@@ -31,6 +31,23 @@
 - Plane 403 — в запросах должен быть `User-Agent` (обход Cloudflare 1010) — уже в коде.
 - git: 0 коммитов — проверь `TIMECHECKER_MONITORED_REPO_DIR` и ветку (есть fallback на HEAD).
 
-## Перенос на серверную БД (будущая эпоха)
-Repository-интерфейс (`storage/repository.py`) изолирует выбор СУБД: серверная реализация
-добавляется отдельным классом без изменения коллекторов/метрик/отчётов.
+## Backend БД: SQLite (по умолчанию) ↔ Postgres/Supabase
+Repository-интерфейс (`storage/`) изолирует СУБД: те же коллекторы/метрики/отчёты работают на любом
+backend. Выбор — через `open_repository(cfg)`.
+
+- **По умолчанию — SQLite** (`timechecker.db`). Наличие `supabase_db_url` в secrets backend НЕ меняет.
+- **Postgres (Supabase) — ЯВНЫЙ opt-in**, одним из способов:
+  - `TIMECHECKER_BACKEND=postgres` + `supabase_db_url` в `~/.wgp/secrets.json` (рекомендуется), либо
+  - `TIMECHECKER_DB_URL=postgresql://...` (полный DSN, приоритетнее).
+  Нужна зависимость `psycopg` (входит в dev; для прод-установки — extra `pip install .[pg]`).
+  Для Supabase используй **pooler-строку** (порт 6543, IPv4): `postgresql://postgres.<ref>:<pwd>@aws-...pooler.supabase.com:6543/postgres`.
+
+### Перенос данных SQLite → Supabase
+1. Убедись, что Postgres включён (см. выше) и `psycopg` установлен.
+2. `timechecker migrate-db` — копирует все таблицы (id сохраняются, идемпотентно).
+3. `timechecker health` → `backend: postgres` + статистика из Supabase.
+4. Для постоянной работы на Postgres задай `TIMECHECKER_BACKEND=postgres` в окружении
+   запланированных задач (`deploy`) — тогда сбор/отчёты идут в Supabase.
+
+> Схема Postgres — `storage/pg_schema.py` (зеркало SQLite; id = IDENTITY). Доступ к БД ограничь
+> на стороне Supabase (RLS/роли); DSN с паролем — только в `~/.wgp/secrets.json`, не в репозитории.
