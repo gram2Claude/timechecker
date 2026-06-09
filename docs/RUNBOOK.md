@@ -11,34 +11,37 @@
    `SessionStart`/`SessionEnd`/`Stop` вызывать `timechecker hook <event>`. Даёт точные границы
    сессий; не конфликтует с хуками памяти (добавляется к ним).
 
-## Боевой режим (production) — Supabase + автозапуск
-Одноразовая настройка, после которой каждый новый проект подхватывается автоматически:
+## Боевой режим (production) — local-first + автозапуск
+Модель: агент пишет в **локальный SQLite** (источник правды), команда `sync` реплицирует в **Supabase**
+(копия-архив). Одноразовая настройка, после которой каждый новый проект подхватывается автоматически:
 
-1. **Глобально установить агент** (на PATH, с драйвером Postgres):
+1. **Глобально установить агент** (на PATH, с драйвером Postgres для sync):
    ```powershell
    uv tool install --force --editable "C:\Users\Oleg\dev\timechecker" --with "psycopg[binary]"
    uv tool update-shell    # добавить ~/.local/bin в PATH (если ещё нет)
    ```
-2. **Включить Postgres-backend персистентно** (учётка → задачи планировщика наследуют):
+   Backend по умолчанию — **SQLite**; флаг `TIMECHECKER_BACKEND` НЕ ставим. DSN Supabase для sync —
+   в `~/.wgp/secrets.json` (`supabase_db_url`), читается отдельно (`cfg.supabase_dsn()`).
+2. **Схема + расписание:**
    ```powershell
-   setx TIMECHECKER_BACKEND postgres
+   timechecker initdb                                       # локальный SQLite
+   timechecker deploy --every 60 --sync-every 60 --report-at 23:50
    ```
-   DSN Supabase — в `~/.wgp/secrets.json` (`supabase_db_url`).
-3. **Схема + расписание** (в текущей сессии задай `$env:TIMECHECKER_BACKEND="postgres"`):
+   `deploy` создаёт задачи Task Scheduler с АБСОЛЮТНЫМ путём к `timechecker.exe`: `timechecker-collect`
+   (→ SQLite), `timechecker-sync` (SQLite → Supabase), `timechecker-report` (`daily`).
+3. **Baseline облака** (зеркало Supabase ← SQLite):
    ```powershell
-   timechecker initdb                              # схема в Supabase (идемпотентно)
-   timechecker deploy --every 60 --report-at 23:50 # collect ежечасно + daily в 23:50
+   timechecker collect --full   # актуализировать SQLite из источников
+   timechecker sync --reset      # TRUNCATE Supabase + чистый ресед (id-консистентно)
    ```
-   `deploy` создаёт задачи Task Scheduler с АБСОЛЮТНЫМ путём к `timechecker.exe`:
-   `timechecker-collect` (→ Supabase) и `timechecker-report` (`daily`).
-4. **Проверка:** `timechecker health` → `"backend": "postgres"`, `"collect_task_scheduled": true`.
-5. **Перенос истории** из локальной SQLite (если была): `timechecker migrate-db` (см. ниже).
+4. **Проверка:** `timechecker health` → `"backend": "sqlite"`, `"collect_task_scheduled": true`;
+   счётчики SQLite == Supabase.
 
 ### Новый проект подключается автоматически
 При `/workflow_create_env` шаг 2.7 спрашивает про учёт времени; на «Да» выполняется
 `timechecker register-project --slug … --repo-dir … --plane-project-id … --plane-prefix …`.
-Дальше **ничего делать не нужно**: ежечасный `collect` подхватит проект (git/Plane), Claude
-собирается глобально, всё пишется в Supabase, дневной отчёт — в 23:50.
+Дальше **ничего делать не нужно**: ежечасный `collect` подхватит проект (git/Plane) в SQLite, Claude
+собирается глобально, `sync` доносит в Supabase, дневной отчёт — в 23:50.
 
 > Задачи планировщика по умолчанию — «только при входе пользователя». Для 24/7 или нескольких
 > сотрудников переконфигурируй (`schtasks /Change /RU <user> /RP <pwd>` или per-user задачи).
@@ -63,23 +66,19 @@
 - Plane 403 — в запросах должен быть `User-Agent` (обход Cloudflare 1010) — уже в коде.
 - git: 0 коммитов — проверь `TIMECHECKER_MONITORED_REPO_DIR` и ветку (есть fallback на HEAD).
 
-## Backend БД: SQLite (по умолчанию) ↔ Postgres/Supabase
-Repository-интерфейс (`storage/`) изолирует СУБД: те же коллекторы/метрики/отчёты работают на любом
-backend. Выбор — через `open_repository(cfg)`.
+## Backend: local-first (SQLite → Supabase)
+Repository-интерфейс (`storage/`) изолирует СУБД (SQLite/Postgres) одним контрактом. Боевая модель —
+**local-first**: агент работает на **локальном SQLite** (источник правды), а `sync` реплицирует в **Supabase**.
 
-- **По умолчанию — SQLite** (`timechecker.db`). Наличие `supabase_db_url` в secrets backend НЕ меняет.
-- **Postgres (Supabase) — ЯВНЫЙ opt-in**, одним из способов:
-  - `TIMECHECKER_BACKEND=postgres` + `supabase_db_url` в `~/.wgp/secrets.json` (рекомендуется), либо
-  - `TIMECHECKER_DB_URL=postgresql://...` (полный DSN, приоритетнее).
-  Нужна зависимость `psycopg` (входит в dev; для прод-установки — extra `pip install .[pg]`).
-  Для Supabase используй **pooler-строку** (порт 6543, IPv4): `postgresql://postgres.<ref>:<pwd>@aws-...pooler.supabase.com:6543/postgres`.
+- **Агент** (`collect/metrics/report/health`) — всегда SQLite (`timechecker.db`); флаг
+  `TIMECHECKER_BACKEND` НЕ ставим. (Прямой Postgres-режим возможен через `TIMECHECKER_BACKEND=postgres`
+  или `TIMECHECKER_DB_URL`, но в local-first не используется.)
+- **`timechecker sync`** — инкрементальная репликация SQLite → Supabase (DSN из secrets
+  `supabase_db_url`, читается `cfg.supabase_dsn()` независимо от backend). Нужна `psycopg` (в dev; прод —
+  extra `.[pg]`). Supabase — **копия-архив** (superset): локальный `prune` не реплицируется.
+  `sync --reset` = `TRUNCATE … RESTART IDENTITY CASCADE` + чистый ресед (id-консистентный baseline).
+- Supabase DSN — **pooler-строка** (порт 6543, IPv4): `postgresql://postgres.<ref>:<pwd>@aws-...pooler.supabase.com:6543/postgres`.
 
-### Перенос данных SQLite → Supabase
-1. Убедись, что Postgres включён (см. выше) и `psycopg` установлен.
-2. `timechecker migrate-db` — копирует все таблицы (id сохраняются, идемпотентно).
-3. `timechecker health` → `backend: postgres` + статистика из Supabase.
-4. Для постоянной работы на Postgres задай `TIMECHECKER_BACKEND=postgres` в окружении
-   запланированных задач (`deploy`) — тогда сбор/отчёты идут в Supabase.
-
-> Схема Postgres — `storage/pg_schema.py` (зеркало SQLite; id = IDENTITY). Доступ к БД ограничь
-> на стороне Supabase (RLS/роли); DSN с паролем — только в `~/.wgp/secrets.json`, не в репозитории.
+> Схема Postgres — `storage/pg_schema.py` (зеркало SQLite; id = IDENTITY, sync сохраняет id → FK
+> консистентны). Доступ к Supabase ограничь (RLS/роли); DSN с паролем — только в `~/.wgp/secrets.json`.
+> `migrate-db` — для разового полного копирования; `sync` — для регулярной инкрементальной репликации.
