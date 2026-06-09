@@ -284,6 +284,26 @@ class SqliteRepository(Repository):
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def last_ingest_run(self):
+        row = self.conn.execute(
+            "SELECT status, started_at, finished_at, sources, error, counts_json "
+            "FROM ingest_run ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def stats(self):
+        def n(sql: str) -> int:
+            return int(self.conn.execute(sql).fetchone()[0])
+
+        return {
+            "events": n("SELECT COUNT(*) FROM activity_event"),
+            "claude_sessions": n("SELECT COUNT(*) FROM claude_session"),
+            "git_commits": n("SELECT COUNT(*) FROM git_commit"),
+            "plane_transitions": n("SELECT COUNT(*) FROM plane_transition"),
+            "tasks": n("SELECT COUNT(*) FROM task"),
+            "daily_summaries": n("SELECT COUNT(*) FROM daily_summary"),
+        }
+
     def prune_raw(self, before_utc):
         c = self.conn
         c.execute(
