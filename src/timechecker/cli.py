@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from datetime import UTC, datetime, timedelta
 
@@ -10,10 +11,11 @@ from . import __version__
 from .collectors.hooks import HOOK_EVENTS, append_hook_event
 from .collectors.orchestrator import collect_all
 from .collectors.plane import PlaneHttpClient
-from .collectors.scheduler import register_task
+from .collectors.scheduler import register_daily_task, register_task
 from .config import Config
 from .logging_setup import get_logger, setup_logging
 from .metrics import compute_day
+from .ops import health_check
 from .reporting import build_daily_report, report_html
 from .storage import SqliteRepository, current_version, init_db
 
@@ -84,6 +86,37 @@ def _cmd_report(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _cmd_health(args: argparse.Namespace, cfg: Config) -> int:
+    repo = SqliteRepository.open(cfg.db_path)
+    try:
+        log.info("health: %s", json.dumps(health_check(repo, cfg), ensure_ascii=False))
+    finally:
+        repo.close()
+    return 0
+
+
+def _cmd_prune(args: argparse.Namespace, cfg: Config) -> int:
+    days = args.days if args.days is not None else cfg.retention_days
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    repo = SqliteRepository.open(cfg.db_path)
+    try:
+        deleted = repo.prune_raw(cutoff)
+        log.info("prune: удалено %s сырых записей старше %s (%s дн)", deleted, cutoff, days)
+    finally:
+        repo.close()
+    return 0
+
+
+def _cmd_deploy(args: argparse.Namespace, cfg: Config) -> int:
+    rc1 = register_task("timechecker-collect", "timechecker collect", args.every)
+    rc2 = register_daily_task(
+        "timechecker-report", "cmd /c timechecker metrics && timechecker report", args.report_at)
+    log.info("deploy: collect/%sмин rc=%s; daily report @%s rc=%s",
+             args.every, rc1, args.report_at, rc2)
+    log.info("deploy: подключи хуки (см. RUNBOOK); проверь 'timechecker health'")
+    return 0 if rc1 == 0 and rc2 == 0 else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="timechecker",
@@ -117,6 +150,12 @@ def build_parser() -> argparse.ArgumentParser:
     report_p = sub.add_parser("report", help="Дневной отчёт (markdown+CSV) из daily_*")
     report_p.add_argument("--date", default=None, help="YYYY-MM-DD (МСК); по умолчанию сегодня")
     report_p.add_argument("--plane-issue", default=None, help="issue для отчёта в Plane")
+    sub.add_parser("health", help="Диагностика агента (БД, последний сбор, расписание)")
+    prune_p = sub.add_parser("prune", help="Очистить сырьё старше N дней (ретеншн)")
+    prune_p.add_argument("--days", type=int, default=None, help="дней (по умолчанию из конфига)")
+    deploy_p = sub.add_parser("deploy", help="Развернуть агент (Task Scheduler: collect + report)")
+    deploy_p.add_argument("--every", type=int, default=30, help="период collect, минут")
+    deploy_p.add_argument("--report-at", default="23:50", help="время дневного отчёта HH:MM")
     return p
 
 
@@ -134,6 +173,9 @@ def main(argv: list[str] | None = None) -> int:
         "metrics": _cmd_metrics,
         "schedule": _cmd_schedule,
         "report": _cmd_report,
+        "health": _cmd_health,
+        "prune": _cmd_prune,
+        "deploy": _cmd_deploy,
     }
     return handlers[args.command](args, cfg)
 

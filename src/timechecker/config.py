@@ -42,6 +42,7 @@ class Config:
     monitored_repo_branch: str | None
     plane_project_id: str | None
     plane_identifier_prefix: str | None
+    retention_days: int
 
     @classmethod
     def load(cls) -> Config:
@@ -70,6 +71,7 @@ class Config:
             monitored_repo_branch=_env("TIMECHECKER_MONITORED_REPO_BRANCH", None),
             plane_project_id=_env("TIMECHECKER_PLANE_PROJECT_ID", None),
             plane_identifier_prefix=_env("TIMECHECKER_PLANE_PREFIX", None),
+            retention_days=int(_env("TIMECHECKER_RETENTION_DAYS", "30") or "30"),
         )
 
     def employee_branch(self) -> tuple[str, str]:
