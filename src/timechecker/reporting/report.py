@@ -59,12 +59,12 @@ def render_markdown(work_date: str, summary: dict | None,
         f"**макс. фокус:** {_hm(s.get('longest_focus_min'))}",
         f"- **Claude:** {s.get('claude_messages', 0)} сообщ., {s.get('claude_tokens', 0)} токенов "
         f"(кэш: {s.get('claude_cache_read', 0)} чит. / {s.get('claude_cache_creation', 0)} зап.) · "
-        f"стоимость **≈ {_usd(s.get('claude_cost_usd'))}**{_models(s)}",
+        f"**≈ API-эквивалент {_usd(s.get('claude_cost_usd'))}**{_models(s)}",
         f"- **Коммитов:** {s.get('commits', 0)} · **гигиена:** {s.get('hygiene_score', 0)} "
         f"(доля с PLANE-ID)",
         "",
         "## Время по задачам",
-        "| Задача | Активно | План | Сообщ. | Токены | ≈ $ | Коммиты |",
+        "| Задача | Активно | План | Сообщ. | Токены | ≈ $ API | Коммиты |",
         "|---|---|---|---|---|---|---|",
     ]
     for t in tasks:
@@ -83,6 +83,8 @@ def render_markdown(work_date: str, summary: dict | None,
             f"- {_hhmm(e.get('gap_start'))}–{_hhmm(e.get('gap_end'))} ({e.get('minutes', 0)} мин)"
             for e in idles
         ]
+    lines += ["", "_≈ API-эквивалент — оценка по API-ставкам (токены × тариф модели); при подписке "
+              "фактическая оплата фиксированная, это бенчмарк, а не счёт._"]
     return "\n".join(lines) + "\n"
 
 

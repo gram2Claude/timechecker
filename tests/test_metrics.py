@@ -76,6 +76,21 @@ def test_compute_day_metrics(tmp_path):
     r.close()
 
 
+def test_compute_day_mixed_ts_order(tmp_path):
+    # события с разным форматом ts (офсет +03:00 vs Z) — строковая сортировка спутала бы порядок
+    # и дала отрицательное время; сортировка по распарсенному UTC даёт корректный результат.
+    r = SqliteRepository.open(tmp_path / "db.sqlite")
+    emp = r.upsert_employee("Oleg")
+    # фактический UTC-порядок: 06:00 (через +03:00), 06:20, 06:25
+    r.insert_event(emp, "claude", "message", "2026-06-09T09:00:00+03:00", external_id="a")
+    r.insert_event(emp, "claude", "message", "2026-06-09T06:20:00Z", external_id="b")
+    r.insert_event(emp, "claude", "message", "2026-06-09T06:25:00Z", external_id="c")
+    res = compute_day(r, emp, "2026-06-09")
+    assert res["active_minutes"] == 25  # 20 + 5; НЕ отрицательное
+    assert res["idle_episodes"] == 0
+    r.close()
+
+
 def test_compute_day_empty(tmp_path):
     r = SqliteRepository.open(tmp_path / "db.sqlite")
     emp = r.upsert_employee("Oleg")

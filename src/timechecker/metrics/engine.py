@@ -58,7 +58,7 @@ def build_task_windows(transitions: list[dict]) -> list[tuple[int, datetime, dat
         by_task[tr["task_id"]].append(tr)
     windows: list[tuple[int, datetime, datetime]] = []
     for tid, trs in by_task.items():
-        trs.sort(key=lambda x: x["ts_utc"])
+        trs.sort(key=lambda x: _parse(x["ts_utc"]))
         open_start: datetime | None = None
         for tr in trs:
             to = tr.get("to_state")
@@ -89,7 +89,9 @@ def compute_day(repo: Any, employee_id: int, work_date: str, *,
                 idle_threshold_min: int = IDLE_THRESHOLD_MIN) -> dict:
     """Посчитать метрики за work_date (МСК) и записать в daily_*. Идемпотентно."""
     w0, w1 = msk_day_window(work_date)
-    events = sorted(repo.events_between(employee_id, w0, w1), key=lambda e: e["ts_utc"])
+    # сортировка по РАСПАРСЕННОМУ UTC, а не по строке: ts бывают с разной точностью/офсетом
+    # (микросекунды, +03:00), строковый порядок их путает → отрицательное время/мусорные простои
+    events = sorted(repo.events_between(employee_id, w0, w1), key=lambda e: _parse(e["ts_utc"]))
     repo.delete_daily_idle(employee_id, work_date)
     repo.delete_daily_task_time(employee_id, work_date)
     if not events:
