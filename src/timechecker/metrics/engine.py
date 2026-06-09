@@ -22,6 +22,8 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from ..pricing import cost_usd, model_family
+
 MSK = timedelta(hours=3)
 IDLE_THRESHOLD_MIN = 30
 _STARTED = {"In Progress", "Started", "In progress"}
@@ -102,9 +104,14 @@ def compute_day(repo: Any, employee_id: int, work_date: str, *,
     gap = timedelta()
     idle_episodes: list[tuple[str, str, int]] = []
     per_task: dict[int, dict] = defaultdict(
-        lambda: {"active": timedelta(), "messages": 0, "tokens": 0, "commits": 0})
+        lambda: {"active": timedelta(), "messages": 0, "tokens": 0, "commits": 0,
+                 "cache_creation": 0, "cache_read": 0, "cost": 0.0})
     claude_messages = 0
     claude_tokens = 0
+    claude_cache_creation = 0
+    claude_cache_read = 0
+    claude_cost = 0.0
+    models_used: set[str] = set()
     switches = 0
     longest_focus = timedelta()
     cur_focus = timedelta()
@@ -114,12 +121,25 @@ def compute_day(repo: Any, employee_id: int, work_date: str, *,
         if e["source"] == "claude":
             claude_messages += 1
             meta = json.loads(e["meta_json"]) if e.get("meta_json") else {}
-            tok = int(meta.get("tokens_in") or 0) + int(meta.get("tokens_out") or 0)
+            t_in = int(meta.get("tokens_in") or 0)
+            t_out = int(meta.get("tokens_out") or 0)
+            cc = int(meta.get("cache_creation") or 0)
+            cr = int(meta.get("cache_read") or 0)
+            tok = t_in + t_out
+            cost = cost_usd(meta.get("model"), t_in, t_out, cc, cr)
             claude_tokens += tok
+            claude_cache_creation += cc
+            claude_cache_read += cr
+            claude_cost += cost
+            if meta.get("model"):
+                models_used.add(model_family(meta.get("model")))
             tid_e = attribute(_parse(e["ts_utc"]), windows)
             if tid_e is not None:
                 per_task[tid_e]["messages"] += 1
                 per_task[tid_e]["tokens"] += tok
+                per_task[tid_e]["cache_creation"] += cc
+                per_task[tid_e]["cache_read"] += cr
+                per_task[tid_e]["cost"] += cost
         if i + 1 >= len(events):
             continue
         t0 = _parse(e["ts_utc"])
@@ -157,6 +177,8 @@ def compute_day(repo: Any, employee_id: int, work_date: str, *,
             active_minutes=_minutes(d["active"]), claude_messages=d["messages"],
             claude_tokens=d["tokens"], commits=d["commits"],
             est_h=tasks.get(tid, {}).get("estimate_h"),
+            claude_cache_read=d["cache_read"], claude_cache_creation=d["cache_creation"],
+            claude_cost_usd=round(d["cost"], 4),
         )
     for start, end, mins in idle_episodes:
         repo.insert_daily_idle(employee_id, work_date, start, end, mins)
@@ -171,6 +193,8 @@ def compute_day(repo: Any, employee_id: int, work_date: str, *,
         longest_focus_min=_minutes(longest_focus),
         claude_messages=claude_messages, claude_tokens=claude_tokens,
         commits=len(commits), hygiene_score=hygiene,
+        claude_cache_read=claude_cache_read, claude_cache_creation=claude_cache_creation,
+        claude_cost_usd=round(claude_cost, 4), models=", ".join(sorted(models_used)) or None,
     )
     return {"tasks": len(per_task), "idle_episodes": len(idle_episodes),
             "active_minutes": _minutes(active)}

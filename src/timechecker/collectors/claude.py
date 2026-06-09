@@ -29,6 +29,9 @@ class ClaudeEvent:
     git_branch: str | None
     tokens_in: int
     tokens_out: int
+    cache_creation: int
+    cache_read: int
+    model: str | None
     tool_count: int
     is_sidechain: bool
 
@@ -70,6 +73,9 @@ def parse_transcript(path: Path, project_key: str | None = None) -> list[ClaudeE
             project_key=project_key, git_branch=o.get("gitBranch"),
             tokens_in=int(usage.get("input_tokens") or 0),
             tokens_out=int(usage.get("output_tokens") or 0),
+            cache_creation=int(usage.get("cache_creation_input_tokens") or 0),
+            cache_read=int(usage.get("cache_read_input_tokens") or 0),
+            model=msg.get("model"),
             tool_count=tool_count, is_sidechain=bool(o.get("isSidechain")),
         ))
     return out
@@ -82,7 +88,9 @@ def derive_sessions(events: Iterable[ClaudeEvent]) -> dict[str, dict]:
         s = sessions.get(e.session_uid)
         if s is None:
             s = {"started_at": e.ts_utc, "ended_at": e.ts_utc, "message_count": 0,
-                 "tool_calls": 0, "tokens_in": 0, "tokens_out": 0, "project_key": e.project_key}
+                 "tool_calls": 0, "tokens_in": 0, "tokens_out": 0,
+                 "cache_creation": 0, "cache_read": 0, "model": None,
+                 "project_key": e.project_key}
             sessions[e.session_uid] = s
         s["started_at"] = min(s["started_at"], e.ts_utc)
         s["ended_at"] = max(s["ended_at"], e.ts_utc)
@@ -90,6 +98,10 @@ def derive_sessions(events: Iterable[ClaudeEvent]) -> dict[str, dict]:
         s["tool_calls"] += e.tool_count
         s["tokens_in"] += e.tokens_in
         s["tokens_out"] += e.tokens_out
+        s["cache_creation"] += e.cache_creation
+        s["cache_read"] += e.cache_read
+        if e.model:
+            s["model"] = e.model
     return sessions
 
 
@@ -125,7 +137,9 @@ class ClaudeCollector:
                 employee_id, "claude", e.event_type, e.ts_utc,
                 project_id=resolve(e.project_key), external_id=e.external_id,
                 meta={"tokens_in": e.tokens_in, "tokens_out": e.tokens_out,
-                      "tools": e.tool_count, "role": e.role, "sidechain": e.is_sidechain},
+                      "cache_creation": e.cache_creation, "cache_read": e.cache_read,
+                      "model": e.model, "tools": e.tool_count, "role": e.role,
+                      "sidechain": e.is_sidechain},
                 ingest_run_id=ingest_run_id,
             )
         sessions = derive_sessions(events)
@@ -135,5 +149,7 @@ class ClaudeCollector:
                 started_at=s["started_at"], ended_at=s["ended_at"],
                 message_count=s["message_count"], tool_calls=s["tool_calls"],
                 tokens_in=s["tokens_in"], tokens_out=s["tokens_out"],
+                cache_creation=s["cache_creation"], cache_read=s["cache_read"],
+                model=s["model"],
             )
         return {"events": len(events), "sessions": len(sessions)}

@@ -23,14 +23,19 @@ class BaseSqlRepository(Repository):
     _SESSION_COLS = (
         "project_id", "task_id", "started_at", "ended_at",
         "message_count", "tool_calls", "tokens_in", "tokens_out",
+        "cache_read", "cache_creation", "model",
     )
     _COMMIT_COLS = ("project_id", "branch", "ts_utc", "author", "subject")
     _SUMMARY_COLS = (
         "span_start", "span_end", "active_minutes", "gap_minutes",
         "idle_ge30_count", "idle_ge30_minutes", "tasks_count", "switches",
         "longest_focus_min", "claude_messages", "claude_tokens", "commits", "hygiene_score",
+        "claude_cache_read", "claude_cache_creation", "claude_cost_usd", "models",
     )
-    _TASKTIME_COLS = ("active_minutes", "claude_messages", "claude_tokens", "commits", "est_h")
+    _TASKTIME_COLS = (
+        "active_minutes", "claude_messages", "claude_tokens", "commits", "est_h",
+        "claude_cache_read", "claude_cache_creation", "claude_cost_usd",
+    )
 
     # ---- примитивы (переопределяются backend-подклассом) ----
     def _q(self, sql: str) -> str:

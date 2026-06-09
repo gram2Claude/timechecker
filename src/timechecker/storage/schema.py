@@ -159,6 +159,20 @@ CREATE TABLE daily_idle (
 CREATE INDEX ix_idle_emp_date ON daily_idle(employee_id, work_date);
 """
 
+_V2 = """
+ALTER TABLE claude_session ADD COLUMN cache_read INTEGER DEFAULT 0;
+ALTER TABLE claude_session ADD COLUMN cache_creation INTEGER DEFAULT 0;
+ALTER TABLE claude_session ADD COLUMN model TEXT;
+ALTER TABLE daily_summary ADD COLUMN claude_cache_read INTEGER DEFAULT 0;
+ALTER TABLE daily_summary ADD COLUMN claude_cache_creation INTEGER DEFAULT 0;
+ALTER TABLE daily_summary ADD COLUMN claude_cost_usd REAL DEFAULT 0;
+ALTER TABLE daily_summary ADD COLUMN models TEXT;
+ALTER TABLE daily_task_time ADD COLUMN claude_cache_read INTEGER DEFAULT 0;
+ALTER TABLE daily_task_time ADD COLUMN claude_cache_creation INTEGER DEFAULT 0;
+ALTER TABLE daily_task_time ADD COLUMN claude_cost_usd REAL DEFAULT 0;
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _V1),
+    (2, _V2),
 ]

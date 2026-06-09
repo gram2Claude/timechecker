@@ -8,10 +8,10 @@ from timechecker.storage import (
 
 def test_migrations_idempotent(tmp_path):
     conn = init_db(tmp_path / "t.db")
-    assert current_version(conn) == 1
+    assert current_version(conn) == 2
     # повторное применение — без ошибок, версия не меняется
-    assert apply_migrations(conn) == 1
-    assert current_version(conn) == 1
+    assert apply_migrations(conn) == 2
+    assert current_version(conn) == 2
     conn.close()
 
 
