@@ -31,6 +31,8 @@ class Config:
 
     claude_home: Path
     claude_projects_dir: Path
+    codex_sessions_dir: Path
+    codex_since: str
     wgp_secrets_path: Path
     github_repo: str | None
     target_branch: str
@@ -52,6 +54,8 @@ class Config:
         home = Path.home()
         claude_home = Path(_env("TIMECHECKER_CLAUDE_HOME", str(home / ".claude")))
         projects = _env("TIMECHECKER_CLAUDE_PROJECTS_DIR", str(claude_home / "projects"))
+        codex_sessions = _env("TIMECHECKER_CODEX_SESSIONS_DIR",
+                              str(home / ".codex" / "sessions"))
         secrets = _env("TIMECHECKER_WGP_SECRETS", str(home / ".wgp" / "secrets.json"))
         username = current_username()
         dev_branch = _env("TIMECHECKER_DEV_BRANCH", None) or username.lower()
@@ -72,6 +76,8 @@ class Config:
         return cls(
             claude_home=claude_home,
             claude_projects_dir=Path(projects),
+            codex_sessions_dir=Path(codex_sessions),
+            codex_since=_env("TIMECHECKER_CODEX_SINCE", "2026-06-01") or "2026-06-01",
             wgp_secrets_path=Path(secrets),
             github_repo=_env("TIMECHECKER_GITHUB_REPO", None),
             target_branch=_env("TIMECHECKER_TARGET_BRANCH", "master"),

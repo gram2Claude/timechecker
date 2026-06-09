@@ -6,7 +6,7 @@
   3. простои ≥30 мин      → daily_idle + daily_summary.idle_ge30_*
   4. span рабочего дня     → daily_summary.span_start/end
   5. active vs gap         → daily_summary.active_minutes/gap_minutes
-  6. effort-прокси Claude  → daily_task_time.claude_messages/tokens + summary
+  6. effort-прокси агентов  → daily_agent_usage (messages/tokens/cost по task×source)
   7. фрагментация          → daily_summary.switches/longest_focus_min
   8. adherence             → daily_task_time.est_h (vs active_minutes; отношение считает отчёт)
   9. гигиена процесса       → daily_summary.hygiene_score (доля коммитов с PLANE-ID)
@@ -87,13 +87,22 @@ def _minutes(td: timedelta) -> int:
 
 def compute_day(repo: Any, employee_id: int, work_date: str, *,
                 idle_threshold_min: int = IDLE_THRESHOLD_MIN) -> dict:
-    """Посчитать метрики за work_date (МСК) и записать в daily_*. Идемпотентно."""
+    """Посчитать метрики за work_date (МСК) и записать в daily_*. Идемпотентно.
+
+    Время (active/idle/фокус) — агент-независимо → daily_summary/daily_task_time.
+    Расход агентов (сообщения/токены/стоимость) — в daily_agent_usage по (task_id, source);
+    неатрибутированное к задаче копится в строке task_id=NULL (без вычитаний).
+    Codex-событие (1 на сессию, ts=старт) даёт одну точку активности — известная асимметрия:
+    точка посреди простоя «съедает» эпизод, а долгая codex-работа без других событий
+    остаётся gap'ом (приемлемо для гранулярности «итог сессии»).
+    """
     w0, w1 = msk_day_window(work_date)
     # сортировка по РАСПАРСЕННОМУ UTC, а не по строке: ts бывают с разной точностью/офсетом
     # (микросекунды, +03:00), строковый порядок их путает → отрицательное время/мусорные простои
     events = sorted(repo.events_between(employee_id, w0, w1), key=lambda e: _parse(e["ts_utc"]))
     repo.delete_daily_idle(employee_id, work_date)
     repo.delete_daily_task_time(employee_id, work_date)
+    repo.delete_daily_agent_usage(employee_id, work_date)
     if not events:
         repo.upsert_daily_summary(employee_id, work_date, tasks_count=0)
         return {"tasks": 0, "idle_episodes": 0, "active_minutes": 0}
@@ -106,42 +115,49 @@ def compute_day(repo: Any, employee_id: int, work_date: str, *,
     gap = timedelta()
     idle_episodes: list[tuple[str, str, int]] = []
     per_task: dict[int, dict] = defaultdict(
-        lambda: {"active": timedelta(), "messages": 0, "tokens": 0, "commits": 0,
-                 "cache_creation": 0, "cache_read": 0, "cost": 0.0})
-    claude_messages = 0
-    claude_tokens = 0
-    claude_cache_creation = 0
-    claude_cache_read = 0
-    claude_cost = 0.0
+        lambda: {"active": timedelta(), "commits": 0})
+    usage: dict[tuple[int | None, str], dict] = defaultdict(
+        lambda: {"messages": 0, "tokens": 0, "cache_read": 0, "cache_creation": 0,
+                 "cost": 0.0})
     models_used: set[str] = set()
     switches = 0
     longest_focus = timedelta()
     cur_focus = timedelta()
     last_task: Any = None
 
+    def _account(tid: int | None, source: str, *, messages: int, tokens: int,
+                 cache_read: int, cache_creation: int, cost: float) -> None:
+        u = usage[(tid, source)]
+        u["messages"] += messages
+        u["tokens"] += tokens
+        u["cache_read"] += cache_read
+        u["cache_creation"] += cache_creation
+        u["cost"] += cost
+
     for i, e in enumerate(events):
-        if e["source"] == "claude":
-            claude_messages += 1
+        if e["source"] == "claude" and e["event_type"] == "message":
             meta = json.loads(e["meta_json"]) if e.get("meta_json") else {}
             t_in = int(meta.get("tokens_in") or 0)
             t_out = int(meta.get("tokens_out") or 0)
             cc = int(meta.get("cache_creation") or 0)
             cr = int(meta.get("cache_read") or 0)
-            tok = t_in + t_out
             cost = cost_usd(meta.get("model"), t_in, t_out, cc, cr)
-            claude_tokens += tok
-            claude_cache_creation += cc
-            claude_cache_read += cr
-            claude_cost += cost
             if meta.get("model"):
                 models_used.add(model_family(meta.get("model")))
-            tid_e = attribute(_parse(e["ts_utc"]), windows)
-            if tid_e is not None:
-                per_task[tid_e]["messages"] += 1
-                per_task[tid_e]["tokens"] += tok
-                per_task[tid_e]["cache_creation"] += cc
-                per_task[tid_e]["cache_read"] += cr
-                per_task[tid_e]["cost"] += cost
+            _account(attribute(_parse(e["ts_utc"]), windows), "claude",
+                     messages=1, tokens=t_in + t_out, cache_read=cr, cache_creation=cc,
+                     cost=cost)
+        elif e["source"] == "codex" and e["event_type"] == "session":
+            meta = json.loads(e["meta_json"]) if e.get("meta_json") else {}
+            inp = int(meta.get("input") or 0)
+            out = int(meta.get("output") or 0)  # reasoning уже входит в output
+            cached = int(meta.get("cached_input") or 0)
+            model = meta.get("model") or "gpt-5.5"
+            cost = cost_usd(model, inp, out, 0, cached, provider_name="openai")
+            models_used.add(model_family(model))
+            _account(attribute(_parse(e["ts_utc"]), windows), "codex",
+                     messages=int(meta.get("turns") or 1), tokens=inp + out,
+                     cache_read=cached, cache_creation=0, cost=cost)
         if i + 1 >= len(events):
             continue
         t0 = _parse(e["ts_utc"])
@@ -173,14 +189,22 @@ def compute_day(repo: Any, employee_id: int, work_date: str, *,
                 per_task[tid]["commits"] += 1
     hygiene = round(commits_with_id / len(commits), 3) if commits else 1.0
 
+    # задачи, у которых есть только расход агента (без активного времени/коммитов),
+    # тоже получают строку времени (0 мин) — отчёт показывает их в таблице задач
+    for tid in {t for t, _s in usage if t is not None}:
+        per_task.setdefault(tid, {"active": timedelta(), "commits": 0})
+
     for tid, d in per_task.items():
         repo.upsert_daily_task_time(
             employee_id, work_date, tid,
-            active_minutes=_minutes(d["active"]), claude_messages=d["messages"],
-            claude_tokens=d["tokens"], commits=d["commits"],
+            active_minutes=_minutes(d["active"]), commits=d["commits"],
             est_h=tasks.get(tid, {}).get("estimate_h"),
-            claude_cache_read=d["cache_read"], claude_cache_creation=d["cache_creation"],
-            claude_cost_usd=round(d["cost"], 4),
+        )
+    for (tid, source), u in usage.items():
+        repo.insert_daily_agent_usage(
+            employee_id, work_date, tid, source,
+            messages=u["messages"], tokens=u["tokens"], cache_read=u["cache_read"],
+            cache_creation=u["cache_creation"], cost_usd=round(u["cost"], 4),
         )
     for start, end, mins in idle_episodes:
         repo.insert_daily_idle(employee_id, work_date, start, end, mins)
@@ -193,10 +217,8 @@ def compute_day(repo: Any, employee_id: int, work_date: str, *,
         idle_ge30_minutes=sum(m for _, _, m in idle_episodes),
         tasks_count=len(per_task), switches=switches,
         longest_focus_min=_minutes(longest_focus),
-        claude_messages=claude_messages, claude_tokens=claude_tokens,
         commits=len(commits), hygiene_score=hygiene,
-        claude_cache_read=claude_cache_read, claude_cache_creation=claude_cache_creation,
-        claude_cost_usd=round(claude_cost, 4), models=", ".join(sorted(models_used)) or None,
+        models=", ".join(sorted(models_used)) or None,
     )
     return {"tasks": len(per_task), "idle_episodes": len(idle_episodes),
             "active_minutes": _minutes(active)}

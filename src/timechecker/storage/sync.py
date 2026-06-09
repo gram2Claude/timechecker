@@ -13,8 +13,8 @@ from typing import Any
 
 # Порядок вставки учитывает внешние ключи (родители раньше детей).
 _REF = ["employee", "project", "task", "ingest_run"]
-_RAW_SMALL = ["claude_session", "git_commit", "commit_task", "plane_transition"]
-_DAILY = ["daily_summary", "daily_task_time", "daily_idle"]
+_RAW_SMALL = ["agent_session", "git_commit", "commit_task", "plane_transition"]
+_DAILY = ["daily_summary", "daily_task_time", "daily_idle", "daily_agent_usage"]
 _ALL = [*_REF, "activity_event", *_RAW_SMALL, *_DAILY]
 
 # id сохраняется при репликации → конфликт по PK `id` идемпотентен и для NULL-able natural-ключей
@@ -25,7 +25,7 @@ _CONFLICT: dict[str, tuple[list[str], str]] = {
     "project": (["id"], "update"),
     "task": (["id"], "update"),
     "ingest_run": (["id"], "update"),
-    "claude_session": (["id"], "update"),
+    "agent_session": (["id"], "update"),
     "git_commit": (["id"], "update"),
     "commit_task": (["commit_id", "task_id"], "nothing"),
     "plane_transition": (["id"], "update"),
@@ -94,7 +94,12 @@ def _sync_events(src: Any, dst: Any, *, full: bool, lookback_days: int, now: str
 
 
 def _sync_daily(src: Any, dst: Any) -> int:
-    """Агрегаты: delete-replace по (employee_id, work_date) из SQLite — АТОМАРНО (один commit)."""
+    """Агрегаты: delete-replace по (employee_id, work_date) из SQLite — АТОМАРНО (один commit).
+
+    Вставка БЕЗ колонки ``id``: на id дневных таблиц нет FK, а облачные id (например, после
+    серверного v3-бэкфилла daily_agent_usage) могут не совпадать с локальными — вставка с
+    локальными id ловила бы PK-конфликт на днях, живущих только в облаке.
+    """
     days = set()
     for t in _DAILY:
         for r in src._query(f"SELECT DISTINCT employee_id, work_date FROM {t}"):
@@ -109,7 +114,7 @@ def _sync_daily(src: Any, dst: Any) -> int:
             rows = rows_by[t]
             if not rows:
                 continue
-            cols = list(rows[0].keys())
+            cols = [c for c in rows[0] if c != "id"]
             ph = ",".join(["%s"] * len(cols))
             cur.executemany(f'INSERT INTO {t} ({", ".join(cols)}) VALUES ({ph})',
                             [tuple(r[c] for c in cols) for r in rows])

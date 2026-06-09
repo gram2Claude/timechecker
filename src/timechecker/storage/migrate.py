@@ -10,9 +10,9 @@ from __future__ import annotations
 from typing import Any
 
 _TABLES = [
-    "employee", "project", "task", "ingest_run", "activity_event", "claude_session",
+    "employee", "project", "task", "ingest_run", "activity_event", "agent_session",
     "git_commit", "commit_task", "plane_transition", "daily_summary", "daily_task_time",
-    "daily_idle",
+    "daily_idle", "daily_agent_usage",
 ]
 
 

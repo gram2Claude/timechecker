@@ -29,13 +29,10 @@ class BaseSqlRepository(Repository):
     _SUMMARY_COLS = (
         "span_start", "span_end", "active_minutes", "gap_minutes",
         "idle_ge30_count", "idle_ge30_minutes", "tasks_count", "switches",
-        "longest_focus_min", "claude_messages", "claude_tokens", "commits", "hygiene_score",
-        "claude_cache_read", "claude_cache_creation", "claude_cost_usd", "models",
+        "longest_focus_min", "commits", "hygiene_score", "models",
     )
-    _TASKTIME_COLS = (
-        "active_minutes", "claude_messages", "claude_tokens", "commits", "est_h",
-        "claude_cache_read", "claude_cache_creation", "claude_cost_usd",
-    )
+    _TASKTIME_COLS = ("active_minutes", "commits", "est_h")
+    _USAGE_COLS = ("messages", "tokens", "cache_read", "cache_creation", "cost_usd")
 
     # ---- примитивы (переопределяются backend-подклассом) ----
     def _q(self, sql: str) -> str:
@@ -167,10 +164,10 @@ class BaseSqlRepository(Repository):
             return self._id("activity_event", "source=? AND external_id=?", (source, external_id))
         return self._insert(sql, params)
 
-    def upsert_claude_session(self, employee_id, session_uid, **fields):
-        return self._wl_upsert("claude_session", ["employee_id", "session_uid"],
-                               [employee_id, session_uid], self._SESSION_COLS, fields,
-                               "session_uid", "updated_at")
+    def upsert_agent_session(self, employee_id, source, session_uid, **fields):
+        return self._wl_upsert("agent_session", ["employee_id", "source", "session_uid"],
+                               [employee_id, source, session_uid], self._SESSION_COLS, fields,
+                               "source, session_uid", "updated_at")
 
     def upsert_git_commit(self, employee_id, sha, **fields):
         return self._wl_upsert("git_commit", ["employee_id", "sha"], [employee_id, sha],
@@ -207,6 +204,20 @@ class BaseSqlRepository(Repository):
             "INSERT INTO daily_idle(employee_id, work_date, gap_start, gap_end, minutes, "
             "computed_at) VALUES(?,?,?,?,?,?)",
             (employee_id, work_date, gap_start, gap_end, minutes, _now()))
+
+    def insert_daily_agent_usage(self, employee_id, work_date, task_id, source, **fields):
+        # идемпотентность — delete-replace по дню (delete_daily_agent_usage), как daily_idle:
+        # UNIQUE-ключ невозможен из-за NULL-able task_id
+        cols = [c for c in self._USAGE_COLS if c in fields]
+        names = ", ".join(["employee_id", "work_date", "task_id", "source", *cols, "computed_at"])
+        ph = ",".join(["?"] * (5 + len(cols)))
+        return self._insert(
+            f"INSERT INTO daily_agent_usage({names}) VALUES({ph})",
+            (employee_id, work_date, task_id, source, *[fields[c] for c in cols], _now()))
+
+    def delete_daily_agent_usage(self, employee_id, work_date):
+        self._exec("DELETE FROM daily_agent_usage WHERE employee_id=? AND work_date=?",
+                   (employee_id, work_date))
 
     # ---- чтение / обслуживание ----
     def get_employee(self, windows_username):
@@ -263,6 +274,13 @@ class BaseSqlRepository(Repository):
             "SELECT gap_start, gap_end, minutes FROM daily_idle "
             "WHERE employee_id=? AND work_date=? ORDER BY gap_start", (employee_id, work_date))
 
+    def daily_agent_usage(self, employee_id, work_date):
+        return self._query(
+            "SELECT u.*, t.plane_identifier, t.title FROM daily_agent_usage u "
+            "LEFT JOIN task t ON t.id = u.task_id "
+            "WHERE u.employee_id=? AND u.work_date=? ORDER BY u.tokens DESC",
+            (employee_id, work_date))
+
     def last_ingest_run(self):
         return self._fetchone(
             "SELECT status, started_at, finished_at, sources, error, counts_json "
@@ -272,7 +290,7 @@ class BaseSqlRepository(Repository):
         def n(table: str) -> int:
             return int(self._scalar(f"SELECT COUNT(*) FROM {table}"))
         return {
-            "events": n("activity_event"), "claude_sessions": n("claude_session"),
+            "events": n("activity_event"), "agent_sessions": n("agent_session"),
             "git_commits": n("git_commit"), "plane_transitions": n("plane_transition"),
             "tasks": n("task"), "daily_summaries": n("daily_summary"),
         }
@@ -283,7 +301,7 @@ class BaseSqlRepository(Repository):
         total = 0
         for sql in (
             "DELETE FROM activity_event WHERE ts_utc < ?",
-            "DELETE FROM claude_session WHERE COALESCE(started_at,'') < ?",
+            "DELETE FROM agent_session WHERE COALESCE(started_at,'') < ?",
             "DELETE FROM git_commit WHERE COALESCE(ts_utc,'') < ?",
             "DELETE FROM plane_transition WHERE COALESCE(ts_utc,'') < ?",
         ):

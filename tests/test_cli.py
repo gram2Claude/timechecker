@@ -10,9 +10,10 @@ def test_help_exits_zero():
 
 
 def test_collect_returns_zero(tmp_path, monkeypatch):
-    # изолируем: пустой каталог проектов + temp БД — без чтения реальных транскриптов
+    # изолируем: пустые каталоги + temp БД — без чтения реальных транскриптов/сессий codex
     monkeypatch.setenv("TIMECHECKER_DB_PATH", str(tmp_path / "db.sqlite"))
     monkeypatch.setenv("TIMECHECKER_CLAUDE_PROJECTS_DIR", str(tmp_path / "no_projects"))
+    monkeypatch.setenv("TIMECHECKER_CODEX_SESSIONS_DIR", str(tmp_path / "no_codex"))
     assert main(["collect"]) == 0
 
 

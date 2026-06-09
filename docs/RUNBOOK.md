@@ -82,3 +82,39 @@ Repository-интерфейс (`storage/`) изолирует СУБД (SQLite/P
 > Схема Postgres — `storage/pg_schema.py` (зеркало SQLite; id = IDENTITY, sync сохраняет id → FK
 > консистентны). Доступ к Supabase ограничь (RLS/роли); DSN с паролем — только в `~/.wgp/secrets.json`.
 > `migrate-db` — для разового полного копирования; `sync` — для регулярной инкрементальной репликации.
+
+## Мультиагентный учёт (v3, схема `agent_session` + `daily_agent_usage`)
+
+С миграции v3 timechecker учитывает расход **нескольких ИИ-агентов**: Claude Code и
+**OpenAI Codex CLI** (`~/.codex/sessions/**/rollout-*.jsonl`, metadata-only). Расход
+(сообщения/токены/кэш/стоимость) лежит в `daily_agent_usage` (разрез employee × date × task ×
+source; `task_id NULL` = не атрибутировано), сессии всех агентов — в `agent_session`
+(ключ `source + session_uid`). Время (active/idle) по-прежнему в `daily_summary`/`daily_task_time`
+и считается в минутах.
+
+- **Codex**: гранулярность «итог сессии» (одно событие на сессию, ts = старт). Ограничения:
+  сессия через полночь целиком ложится на день старта; totals «дозревают» при пересчёте дня
+  старта (`daily` пересчитывает сегодня+вчера); одна точка активности на сессию может «съесть»
+  эпизод простоя, а долгая codex-работа без других событий остаётся простоем.
+- **Семантика OpenAI** (отличается от Anthropic!): `input_tokens` ВКЛЮЧАЕТ `cached_input_tokens`;
+  `reasoning_output_tokens` уже ВХОДИТ в `output_tokens` (не суммировать); cache-write не
+  существует. Формула: `(input − cached)·r_in + cached·r_cache_read + output·r_out`.
+- **Стоимость = «≈ API-эквивалент»** для ОБОИХ агентов: оценка по API-ставкам
+  (LiteLLM-обновление еженедельно, `pricing-refresh`), при подписке это бенчмарк, НЕ реальный счёт.
+- Конфиг: `TIMECHECKER_CODEX_SESSIONS_DIR` (дефолт `~/.codex/sessions`),
+  `TIMECHECKER_CODEX_SINCE` (нижняя граница истории, дефолт 2026-06-01).
+- `health`: ключ статистики `agent_sessions` (бывш. `claude_sessions`).
+
+### Миграция на v3 (выполнено 2026-06-10) и откат
+1. Отключить Task Scheduler (`schtasks /Change /TN timechecker-* /DISABLE`) ДО обновления кода:
+   editable-инсталл делает рабочую копию «горячим продом» — scheduled collect применил бы
+   миграцию неконтролируемо.
+2. Бэкап `timechecker.db` → `.bak-v2-<дата>`. Supabase до локальной проверки НЕ синкать
+   (остаётся v2 = второй бэкап агрегатов).
+3. `initdb` (v3: пересоздание agent_session, бэкфилл daily_agent_usage, дроп claude_*-колонок) →
+   проверить суммы против бэкапа → `collect --since <codex_since>` → `metrics --date …` по дням →
+   `sync` (мигрирует Supabase при open) → включить Task Scheduler.
+4. **Откат**: локально — восстановить `.bak-v2` + старый код (git revert). Облако: старый
+   `sync --reset` по v3-схеме НЕ работает (TRUNCATE claude_session упадёт) → psql: DROP TABLE
+   всех timechecker-таблиц + schema_migrations, затем старый код `sync --full` пересоздаст
+   v2-схему и зальёт всё из локальной v2-БД (облако — реплика, источник правды локальный).

@@ -144,8 +144,8 @@ class ClaudeCollector:
             )
         sessions = derive_sessions(events)
         for sid, s in sessions.items():
-            self.repo.upsert_claude_session(
-                employee_id, sid, project_id=resolve(s["project_key"]),
+            self.repo.upsert_agent_session(
+                employee_id, "claude", sid, project_id=resolve(s["project_key"]),
                 started_at=s["started_at"], ended_at=s["ended_at"],
                 message_count=s["message_count"], tool_calls=s["tool_calls"],
                 tokens_in=s["tokens_in"], tokens_out=s["tokens_out"],

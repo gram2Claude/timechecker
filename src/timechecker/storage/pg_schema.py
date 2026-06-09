@@ -163,7 +163,100 @@ ALTER TABLE daily_task_time ADD COLUMN claude_cache_creation INTEGER DEFAULT 0;
 ALTER TABLE daily_task_time ADD COLUMN claude_cost_usd REAL DEFAULT 0;
 """
 
+# v3 (E8, codex_usage) — зеркало SQLite-v3 (см. schema.py). Отличия диалекта: IDENTITY-id,
+# GREATEST вместо MAX(0,…); без BEGIN/COMMIT — _executescript Postgres атомарен (один commit).
+# ВАЖНО: _executescript режет скрипт по «;» — внутри литералов «;» быть не должно.
+_V3 = f"""
+CREATE TABLE agent_session (
+  id            {_ID},
+  employee_id   INTEGER NOT NULL REFERENCES employee(id),
+  project_id    INTEGER REFERENCES project(id),
+  task_id       INTEGER REFERENCES task(id),
+  source        TEXT NOT NULL DEFAULT 'claude',
+  session_uid   TEXT NOT NULL,
+  started_at    TEXT,
+  ended_at      TEXT,
+  message_count INTEGER DEFAULT 0,
+  tool_calls    INTEGER DEFAULT 0,
+  tokens_in     INTEGER DEFAULT 0,
+  tokens_out    INTEGER DEFAULT 0,
+  cache_read    INTEGER DEFAULT 0,
+  cache_creation INTEGER DEFAULT 0,
+  model         TEXT,
+  updated_at    TEXT,
+  UNIQUE(source, session_uid)
+);
+INSERT INTO agent_session (id, employee_id, project_id, task_id, source, session_uid,
+  started_at, ended_at, message_count, tool_calls, tokens_in, tokens_out,
+  cache_read, cache_creation, model, updated_at)
+SELECT id, employee_id, project_id, task_id, 'claude', session_uid,
+  started_at, ended_at, message_count, tool_calls, tokens_in, tokens_out,
+  cache_read, cache_creation, model, updated_at
+FROM claude_session;
+DROP TABLE claude_session;
+CREATE INDEX ix_agent_session_emp ON agent_session(employee_id, started_at);
+SELECT setval(pg_get_serial_sequence('agent_session', 'id'),
+  COALESCE((SELECT MAX(id) FROM agent_session), 1),
+  (SELECT MAX(id) FROM agent_session) IS NOT NULL);
+CREATE TABLE daily_agent_usage (
+  id             {_ID},
+  employee_id    INTEGER NOT NULL REFERENCES employee(id),
+  work_date      TEXT    NOT NULL,
+  task_id        INTEGER REFERENCES task(id),
+  source         TEXT    NOT NULL DEFAULT 'claude',
+  messages       INTEGER NOT NULL DEFAULT 0,
+  tokens         INTEGER NOT NULL DEFAULT 0,
+  cache_read     INTEGER NOT NULL DEFAULT 0,
+  cache_creation INTEGER NOT NULL DEFAULT 0,
+  cost_usd       REAL    NOT NULL DEFAULT 0,
+  computed_at    TEXT
+);
+CREATE INDEX ix_agent_usage_emp_date ON daily_agent_usage(employee_id, work_date);
+INSERT INTO daily_agent_usage (employee_id, work_date, task_id, source, messages, tokens,
+  cache_read, cache_creation, cost_usd, computed_at)
+SELECT employee_id, work_date, task_id, 'claude',
+  COALESCE(claude_messages, 0), COALESCE(claude_tokens, 0),
+  COALESCE(claude_cache_read, 0), COALESCE(claude_cache_creation, 0),
+  COALESCE(claude_cost_usd, 0), computed_at
+FROM daily_task_time
+WHERE COALESCE(claude_messages, 0) + COALESCE(claude_tokens, 0)
+      + COALESCE(claude_cost_usd, 0) > 0;
+INSERT INTO daily_agent_usage (employee_id, work_date, task_id, source, messages, tokens,
+  cache_read, cache_creation, cost_usd, computed_at)
+SELECT s.employee_id, s.work_date, NULL, 'claude',
+  GREATEST(0, COALESCE(s.claude_messages, 0) - COALESCE(t.m, 0)),
+  GREATEST(0, COALESCE(s.claude_tokens, 0) - COALESCE(t.tok, 0)),
+  GREATEST(0, COALESCE(s.claude_cache_read, 0) - COALESCE(t.cr, 0)),
+  GREATEST(0, COALESCE(s.claude_cache_creation, 0) - COALESCE(t.cc, 0)),
+  GREATEST(0, COALESCE(s.claude_cost_usd, 0) - COALESCE(t.cost, 0)),
+  s.computed_at
+FROM daily_summary s
+LEFT JOIN (
+  SELECT employee_id, work_date,
+    SUM(COALESCE(claude_messages, 0)) m, SUM(COALESCE(claude_tokens, 0)) tok,
+    SUM(COALESCE(claude_cache_read, 0)) cr, SUM(COALESCE(claude_cache_creation, 0)) cc,
+    SUM(COALESCE(claude_cost_usd, 0)) cost
+  FROM daily_task_time GROUP BY employee_id, work_date
+) t ON t.employee_id = s.employee_id AND t.work_date = s.work_date
+WHERE COALESCE(s.claude_messages, 0) > COALESCE(t.m, 0)
+   OR COALESCE(s.claude_tokens, 0) > COALESCE(t.tok, 0)
+   OR COALESCE(s.claude_cache_read, 0) > COALESCE(t.cr, 0)
+   OR COALESCE(s.claude_cache_creation, 0) > COALESCE(t.cc, 0)
+   OR COALESCE(s.claude_cost_usd, 0) > COALESCE(t.cost, 0) + 1e-9;
+ALTER TABLE daily_summary DROP COLUMN claude_messages;
+ALTER TABLE daily_summary DROP COLUMN claude_tokens;
+ALTER TABLE daily_summary DROP COLUMN claude_cache_read;
+ALTER TABLE daily_summary DROP COLUMN claude_cache_creation;
+ALTER TABLE daily_summary DROP COLUMN claude_cost_usd;
+ALTER TABLE daily_task_time DROP COLUMN claude_messages;
+ALTER TABLE daily_task_time DROP COLUMN claude_tokens;
+ALTER TABLE daily_task_time DROP COLUMN claude_cache_read;
+ALTER TABLE daily_task_time DROP COLUMN claude_cache_creation;
+ALTER TABLE daily_task_time DROP COLUMN claude_cost_usd;
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _V1),
     (2, _V2),
+    (3, _V3),
 ]
