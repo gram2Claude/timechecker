@@ -16,7 +16,8 @@ def test_collect_returns_zero(tmp_path, monkeypatch):
     assert main(["collect"]) == 0
 
 
-def test_report_stub_returns_zero():
+def test_report_returns_zero(tmp_path, monkeypatch):
+    monkeypatch.setenv("TIMECHECKER_DB_PATH", str(tmp_path / "db.sqlite"))
     assert main(["report"]) == 0
 
 
