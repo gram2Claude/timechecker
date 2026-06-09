@@ -28,7 +28,9 @@ uv sync
 | `timechecker health` | диагностика (БД, последний сбор, расписание) |
 | `timechecker prune [--days N]` | очистить сырьё старше N дней (ретеншн) |
 | `timechecker deploy [--every 30] [--report-at 23:50]` | расписание collect + дневной отчёт |
-| `timechecker schedule` / `hook` | примитивы планировщика / хуков сессий |
+| `timechecker migrate-db` | перенести данные SQLite → Postgres/Supabase |
+| `timechecker register-project --slug … --repo-dir …` | привязать проект к учёту (git/Plane) |
+| `timechecker schedule` / `hook` / `projects` | примитивы планировщика / хуков / список проектов |
 
 ## Конфигурация (env `TIMECHECKER_*`)
 Все опциональны (разумные дефолты). Ключевые:
@@ -38,6 +40,8 @@ uv sync
 - `TIMECHECKER_PLANE_PROJECT_ID` / `_PREFIX` — проект Plane для зеркала задач/переходов
 - `TIMECHECKER_WGP_SECRETS` — путь к секретам Plane/GitHub (дефолт `~/.wgp/secrets.json`)
 - `TIMECHECKER_RETENTION_DAYS` — срок хранения сырья (дефолт 30)
+- `TIMECHECKER_BACKEND=postgres` (+ `supabase_db_url` в secrets) или `TIMECHECKER_DB_URL=postgresql://…`
+  — **явный** opt-in на облачный backend (по умолчанию SQLite); см. `docs/RUNBOOK.md`
 
 Полный список — в `.env.example`.
 
@@ -48,6 +52,7 @@ uv sync
 - БД и секреты — вне публичного репозитория (`.gitignore`). Подробности — `docs/RUNBOOK.md`.
 
 ## Архитектура
-`collectors/` (Claude/hooks/git/Plane) → `storage/` (repository DAO + SQLite) → `metrics/` (движок) →
-`reporting/` (отчёт) → `ops/` (диагностика). Repository-интерфейс изолирует SQLite от будущей
-серверной БД. Планирование/контроль проекта — через `workflow_global_plan` (Plane + merge-гейт).
+`collectors/` (Claude/hooks/git/Plane) → `storage/` (repository DAO: SQLite **или** Postgres/Supabase) →
+`metrics/` (движок) → `reporting/` (отчёт) → `ops/` (диагностика). Repository-интерфейс (`BaseSqlRepository`
++ `SqliteRepository`/`PostgresRepository`) позволяет менять СУБД без правок коллекторов/метрик/отчётов.
+Планирование/контроль проекта — через `workflow_global_plan` (Plane + merge-гейт).

@@ -138,7 +138,8 @@ def _cmd_projects(args: argparse.Namespace, cfg: Config) -> int:
 
 def _cmd_migrate_db(args: argparse.Namespace, cfg: Config) -> int:
     if not cfg.db_url:
-        log.error("migrate-db: db_url не задан (supabase_db_url в secrets / TIMECHECKER_DB_URL)")
+        log.error("migrate-db: Postgres не включён — задай TIMECHECKER_BACKEND=postgres "
+                  "(+ supabase_db_url в secrets) или TIMECHECKER_DB_URL")
         return 1
     from .storage.migrate import migrate_sqlite_to_postgres
     src = SqliteRepository.open(cfg.db_path)

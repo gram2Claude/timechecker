@@ -34,7 +34,9 @@ def migrate_sqlite_to_postgres(src: Any, dst: Any) -> dict:
     for table in _TABLES:
         if table == "commit_task":
             continue
+        # is_called = есть ли строки: для пустой таблицы next id == 1, иначе max+1
         dst._exec(
             f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
-            f"GREATEST((SELECT COALESCE(MAX(id), 0) FROM {table}), 1))")
+            f"COALESCE((SELECT MAX(id) FROM {table}), 1), "
+            f"(SELECT MAX(id) FROM {table}) IS NOT NULL)")
     return counts
