@@ -11,6 +11,38 @@
    `SessionStart`/`SessionEnd`/`Stop` вызывать `timechecker hook <event>`. Даёт точные границы
    сессий; не конфликтует с хуками памяти (добавляется к ним).
 
+## Боевой режим (production) — Supabase + автозапуск
+Одноразовая настройка, после которой каждый новый проект подхватывается автоматически:
+
+1. **Глобально установить агент** (на PATH, с драйвером Postgres):
+   ```powershell
+   uv tool install --force --editable "C:\Users\Oleg\dev\timechecker" --with "psycopg[binary]"
+   uv tool update-shell    # добавить ~/.local/bin в PATH (если ещё нет)
+   ```
+2. **Включить Postgres-backend персистентно** (учётка → задачи планировщика наследуют):
+   ```powershell
+   setx TIMECHECKER_BACKEND postgres
+   ```
+   DSN Supabase — в `~/.wgp/secrets.json` (`supabase_db_url`).
+3. **Схема + расписание** (в текущей сессии задай `$env:TIMECHECKER_BACKEND="postgres"`):
+   ```powershell
+   timechecker initdb                              # схема в Supabase (идемпотентно)
+   timechecker deploy --every 60 --report-at 23:50 # collect ежечасно + daily в 23:50
+   ```
+   `deploy` создаёт задачи Task Scheduler с АБСОЛЮТНЫМ путём к `timechecker.exe`:
+   `timechecker-collect` (→ Supabase) и `timechecker-report` (`daily`).
+4. **Проверка:** `timechecker health` → `"backend": "postgres"`, `"collect_task_scheduled": true`.
+5. **Перенос истории** из локальной SQLite (если была): `timechecker migrate-db` (см. ниже).
+
+### Новый проект подключается автоматически
+При `/workflow_create_env` шаг 2.7 спрашивает про учёт времени; на «Да» выполняется
+`timechecker register-project --slug … --repo-dir … --plane-project-id … --plane-prefix …`.
+Дальше **ничего делать не нужно**: ежечасный `collect` подхватит проект (git/Plane), Claude
+собирается глобально, всё пишется в Supabase, дневной отчёт — в 23:50.
+
+> Задачи планировщика по умолчанию — «только при входе пользователя». Для 24/7 или нескольких
+> сотрудников переконфигурируй (`schtasks /Change /RU <user> /RP <pwd>` или per-user задачи).
+
 ## Проверка
 - `timechecker health` — статус БД, последний `ingest_run` (ok/partial), счётчики, наличие задачи.
 - Отчёт за день — `<db_dir>/reports/<date>.md` и `.csv`.
