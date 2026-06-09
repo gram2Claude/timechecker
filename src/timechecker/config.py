@@ -43,6 +43,7 @@ class Config:
     plane_project_id: str | None
     plane_identifier_prefix: str | None
     retention_days: int
+    db_url: str | None
 
     @classmethod
     def load(cls) -> Config:
@@ -57,6 +58,13 @@ class Config:
             "TIMECHECKER_DB_PATH", str(claude_home / "timechecker" / "timechecker.db")
         )
         repo_dir = _env("TIMECHECKER_MONITORED_REPO_DIR", None)
+        db_url = _env("TIMECHECKER_DB_URL", None)
+        if not db_url:
+            try:
+                raw = Path(secrets).read_text(encoding="utf-8")
+                db_url = json.loads(raw).get("supabase_db_url")
+            except (OSError, json.JSONDecodeError):
+                db_url = None
         return cls(
             claude_home=claude_home,
             claude_projects_dir=Path(projects),
@@ -72,6 +80,7 @@ class Config:
             plane_project_id=_env("TIMECHECKER_PLANE_PROJECT_ID", None),
             plane_identifier_prefix=_env("TIMECHECKER_PLANE_PREFIX", None),
             retention_days=int(_env("TIMECHECKER_RETENTION_DAYS", "30") or "30"),
+            db_url=db_url,
         )
 
     def employee_branch(self) -> tuple[str, str]:

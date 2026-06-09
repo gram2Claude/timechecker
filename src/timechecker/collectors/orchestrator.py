@@ -14,7 +14,7 @@ from typing import Any
 
 from ..config import Config
 from ..registry import load_projects
-from ..storage import SqliteRepository
+from ..storage import open_repository
 from .claude import ClaudeCollector
 from .git import GitCollector
 from .hooks import HookCollector
@@ -48,7 +48,7 @@ def _sources(cfg: Config) -> list[dict]:
 
 def collect_all(cfg: Config, *, since: str | None = None) -> dict:
     """Прогнать все настроенные коллекторы по всем проектам; вернуть сводные счётчики."""
-    repo = SqliteRepository.open(cfg.db_path)
+    repo = open_repository(cfg)
     try:
         emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)
         run = repo.start_ingest_run(emp, sources="claude,hook,git,plane")
