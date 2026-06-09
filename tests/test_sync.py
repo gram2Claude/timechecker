@@ -79,6 +79,9 @@ def test_sync_local_first(tmp_path):
         # reset → чистый ресед
         sync_to_postgres(src, dst, reset=True)
         assert dst.stats()["events"] == 3
+        # повторный --full идемпотентен даже для NULL-external (конфликт по id, не PK-дубль)
+        sync_to_postgres(src, dst, full=True)
+        assert dst.stats()["events"] == 3
     finally:
         conn.execute("DROP SCHEMA IF EXISTS timechecker_test CASCADE")
         conn.commit()
