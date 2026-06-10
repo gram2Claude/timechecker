@@ -9,6 +9,7 @@ Plane идёт ПЕРЕД git (задачи зеркалятся → commit_task
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,6 +22,16 @@ from .codex import CodexCollector, make_cwd_resolver
 from .git import GitCollector
 from .hooks import HookCollector
 from .plane import PlaneCollector, PlaneHttpClient
+
+_HOME = os.path.expanduser("~")
+
+
+def _sanitize_error(msg: str, *, limit: int = 500) -> str:
+    """Подготовить текст ошибки коллектора к записи (она реплицируется в облако): заменить
+    домашний путь на ``~`` и усечь длину — не льём абсолютные пути/«простыни» в Supabase."""
+    if _HOME and _HOME in msg:
+        msg = msg.replace(_HOME, "~")
+    return msg[:limit]
 
 
 def _merge(dst: dict, src: dict) -> None:
@@ -68,7 +79,7 @@ def collect_all(cfg: Config, *, since: str | None = None, full: bool = False) ->
             try:
                 _merge(counts, fn())
             except Exception as e:  # изоляция: сбой одного коллектора не рушит прогон
-                errors[name] = f"{type(e).__name__}: {e}"
+                errors[name] = _sanitize_error(f"{type(e).__name__}: {e}")
 
         sources = _sources(cfg)
         _run("claude", lambda: ClaudeCollector(repo, cfg.claude_projects_dir).collect(

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 _MESSAGE_TYPES = ("user", "assistant")
+_MAX_LINE = 10_000_000  # пропускать аномально длинные строки (защита памяти при стриме)
 
 
 @dataclass
@@ -37,18 +38,21 @@ class ClaudeEvent:
 
 
 def _iter_json_lines(path: Path) -> Iterator[dict]:
+    # построчный стрим (не read_text целиком) — память ограничена самой длинной строкой,
+    # а не размером файла; гигантскую строку пропускаем
     try:
-        text = path.read_text(encoding="utf-8")
+        fh = path.open(encoding="utf-8")
     except OSError:
         return
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            yield json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    with fh:
+        for line in fh:
+            line = line.strip()
+            if not line or len(line) > _MAX_LINE:
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
 
 
 def parse_transcript(path: Path, project_key: str | None = None) -> list[ClaudeEvent]:

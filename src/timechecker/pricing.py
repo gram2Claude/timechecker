@@ -10,8 +10,12 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
+
+# Sanity-потолок ставки из внешнего датасета (supply-chain): USD за 1M токенов, реальные < ~$200.
+_RATE_CEILING = 10_000.0
 
 # USD за 1_000_000 токенов: (input, output, cache_write, cache_read). Дефолт; переопределяется
 # файлом ~/.wgp/pricing.json (или TIMECHECKER_PRICING) — см. _ensure_overrides().
@@ -111,11 +115,27 @@ LITELLM_URL = ("https://raw.githubusercontent.com/BerriAI/litellm/main/"
                "model_prices_and_context_window.json")
 
 
+_MAX_FETCH_BYTES = 16 * 1024 * 1024  # cap на ответ (LiteLLM ~неск. МБ) — защита от memory-DoS
+
+
 def _fetch_json(url: str, timeout: int = 20) -> dict:
     import urllib.request
     req = urllib.request.Request(url, headers={"User-Agent": "timechecker"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+        raw = resp.read(_MAX_FETCH_BYTES + 1)
+    if len(raw) > _MAX_FETCH_BYTES:
+        raise ValueError("ответ pricing-датасета превышает лимит размера")
+    return json.loads(raw.decode("utf-8"))
+
+
+def _sane_rates(tup: tuple[float, float, float, float]) -> bool:
+    """Sanity недоверенной ставки: все конечные, input/output > 0, всё в [0, потолок)."""
+    if not all(math.isfinite(x) for x in tup):
+        return False
+    ri, ro, _rw, _rr = tup
+    if ri <= 0 or ro <= 0:
+        return False
+    return all(0 <= x < _RATE_CEILING for x in tup)
 
 
 def refresh_rates(*, data: dict | None = None, url: str | None = None,
@@ -153,7 +173,7 @@ def refresh_rates(*, data: dict | None = None, url: str | None = None,
                 best_score = score
                 best = (float(ic) * million, float(oc) * million,
                         float(cw or 0) * million, float(cr or 0) * million)
-        if best is not None:
+        if best is not None and _sane_rates(best):
             new[fam] = best
     for fam in _GPT_FAMILIES:
         best = None
@@ -173,7 +193,7 @@ def refresh_rates(*, data: dict | None = None, url: str | None = None,
                 best_score = score
                 best = (float(ic) * million, float(oc) * million, 0.0,
                         float(cr or 0) * million)
-        if best is not None:
+        if best is not None and _sane_rates(best):
             new[fam] = best
     if not new:
         raise ValueError("в датасете не найдено ставок Claude")
