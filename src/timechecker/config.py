@@ -10,7 +10,7 @@ from __future__ import annotations
 import getpass
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -45,7 +45,7 @@ class Config:
     plane_project_id: str | None
     plane_identifier_prefix: str | None
     retention_days: int
-    db_url: str | None
+    db_url: str | None = field(repr=False)  # DSN с паролем — не светить в repr/логах/трейсбэках
     collect_lookback_days: int
 
     @classmethod

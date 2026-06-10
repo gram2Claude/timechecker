@@ -126,3 +126,27 @@ def test_refresh_rates(tmp_path):
     saved_json = json.loads(out.read_text(encoding="utf-8"))
     assert "opus" in saved_json and "gpt-5.5" in saved_json
     assert "gpt-4o" not in saved_json  # не отслеживаемое семейство
+
+
+def test_refresh_rates_rejects_insane(tmp_path):
+    """Отравленный датасет: абсурдные/отрицательные ставки отбраковываются (sanity)."""
+    import timechecker.pricing as pr
+    from timechecker.pricing import refresh_rates
+    data = {
+        "claude-opus-4-1": {"input_cost_per_token": 1.0,  # 1e6/1M — выше потолка
+                            "output_cost_per_token": 0.000075},
+        "claude-sonnet-4-5": {"input_cost_per_token": 0.000003,  # валидная
+                              "output_cost_per_token": 0.000015},
+        "claude-haiku-4": {"input_cost_per_token": -0.0000008,  # отрицательная
+                           "output_cost_per_token": 0.000004},
+    }
+    saved = dict(pr.RATES)
+    try:
+        new = refresh_rates(data=data, write_path=str(tmp_path / "p.json"))
+    finally:
+        pr.RATES.clear()
+        pr.RATES.update(saved)
+        pr._loaded = False
+    assert "opus" not in new   # абсурдно высокая — отброшена
+    assert "haiku" not in new  # отрицательная — отброшена
+    assert "sonnet" in new     # валидная — принята

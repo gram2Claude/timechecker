@@ -9,10 +9,25 @@ SQL пишется с плейсхолдером ``?``; backend-подкласс
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 
 from .repository import Repository
+
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def quote_ident(name: str) -> str:
+    """Безопасно заквотить SQL-идентификатор (имя таблицы/колонки) для интерполяции в SQL.
+
+    В sync/migrate имена колонок берутся из живой схемы БД (ключи ``SELECT *``). Строгая
+    валидация + ANSI-кавычки (совместимо с SQLite и Postgres) исключают инъекцию, если
+    кто-то расширил схему колонкой со спецсимволами в имени (defense-in-depth).
+    """
+    if not _IDENT_RE.match(name):
+        raise ValueError(f"недопустимый SQL-идентификатор: {name!r}")
+    return f'"{name}"'
 
 
 class BaseSqlRepository(Repository):

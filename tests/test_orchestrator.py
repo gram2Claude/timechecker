@@ -36,6 +36,13 @@ def test_collect_all_claude_hooks(tmp_path, monkeypatch):
     assert collect_all(cfg, full=True)["events"] == 2  # идемпотентно
 
 
+def test_sanitize_error_redacts_home_and_truncates():
+    from timechecker.collectors.orchestrator import _HOME, _sanitize_error
+    out = _sanitize_error(f"FileNotFoundError: {_HOME}\\.wgp\\secrets.json")
+    assert _HOME not in out and "~" in out  # домашний путь не уходит в облако
+    assert len(_sanitize_error("x" * 999)) == 500  # длина усечена
+
+
 def test_build_schtasks_args():
     args = build_schtasks_args("tc", "timechecker collect", 30)
     assert args[0] == "schtasks"

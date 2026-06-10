@@ -6,6 +6,18 @@ from timechecker.storage import (
 )
 
 
+def test_quote_ident():
+    """SQL-идентификаторы валидируются и квотируются; мусор → ValueError (анти-инъекция)."""
+    import pytest
+
+    from timechecker.storage.base import quote_ident
+    assert quote_ident("daily_agent_usage") == '"daily_agent_usage"'
+    assert quote_ident("tokens_in") == '"tokens_in"'
+    for bad in ('a"; DROP TABLE x;--', "a b", "1col", "col-name", ""):
+        with pytest.raises(ValueError):
+            quote_ident(bad)
+
+
 def test_migrations_idempotent(tmp_path):
     conn = init_db(tmp_path / "t.db")
     assert current_version(conn) == 3

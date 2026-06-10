@@ -11,6 +11,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from .base import quote_ident
+
 # Порядок вставки учитывает внешние ключи (родители раньше детей).
 _REF = ["employee", "project", "task", "ingest_run"]
 _RAW_SMALL = ["agent_session", "git_commit", "commit_task", "plane_transition"]
@@ -56,15 +58,19 @@ def _push(dst: Any, table: str, rows: list[dict], conflict: list[str] | None, mo
     if not rows:
         return 0
     cols = list(rows[0].keys())
+    qcols = [quote_ident(c) for c in cols]  # имена из живой схемы → квотируем (defense-in-depth)
+    qconf = [quote_ident(c) for c in conflict] if conflict else []
     placeholders = ",".join(["%s"] * len(cols))
     if not conflict:
         tail = ""
     elif mode == "nothing":
-        tail = f"ON CONFLICT ({', '.join(conflict)}) DO NOTHING"
+        tail = f"ON CONFLICT ({', '.join(qconf)}) DO NOTHING"
     else:
-        sets = ", ".join(f"{c}=excluded.{c}" for c in cols if c not in conflict)
-        tail = f"ON CONFLICT ({', '.join(conflict)}) DO UPDATE SET {sets}"
-    sql = f'INSERT INTO {table} ({", ".join(cols)}) VALUES ({placeholders}) {tail}'.strip()
+        sets = ", ".join(f"{q}=excluded.{q}" for c, q in zip(cols, qcols, strict=True)
+                         if c not in conflict)
+        tail = f"ON CONFLICT ({', '.join(qconf)}) DO UPDATE SET {sets}"
+    sql = (f'INSERT INTO {quote_ident(table)} ({", ".join(qcols)}) '
+           f'VALUES ({placeholders}) {tail}').strip()
     pushed = 0
     for i in range(0, len(rows), _BATCH):
         chunk = rows[i:i + _BATCH]
@@ -102,21 +108,24 @@ def _sync_daily(src: Any, dst: Any) -> int:
     """
     days = set()
     for t in _DAILY:
-        for r in src._query(f"SELECT DISTINCT employee_id, work_date FROM {t}"):
+        for r in src._query(f"SELECT DISTINCT employee_id, work_date FROM {quote_ident(t)}"):
             days.add((r["employee_id"], r["work_date"]))
-    rows_by = {t: src._query(f"SELECT * FROM {t}") for t in _DAILY}
+    rows_by = {t: src._query(f"SELECT * FROM {quote_ident(t)}") for t in _DAILY}
     total = 0
     with dst.conn.cursor() as cur:
         for emp, wd in days:
             for t in _DAILY:
-                cur.execute(f"DELETE FROM {t} WHERE employee_id=%s AND work_date=%s", (emp, wd))
+                cur.execute(
+                    f"DELETE FROM {quote_ident(t)} WHERE employee_id=%s AND work_date=%s",
+                    (emp, wd))
         for t in _DAILY:
             rows = rows_by[t]
             if not rows:
                 continue
             cols = [c for c in rows[0] if c != "id"]
             ph = ",".join(["%s"] * len(cols))
-            cur.executemany(f'INSERT INTO {t} ({", ".join(cols)}) VALUES ({ph})',
+            qcols = ", ".join(quote_ident(c) for c in cols)
+            cur.executemany(f'INSERT INTO {quote_ident(t)} ({qcols}) VALUES ({ph})',
                             [tuple(r[c] for c in cols) for r in rows])
             total += len(rows)
     dst.conn.commit()  # delete+insert в одной транзакции → нет окна пустых партиций при сбое

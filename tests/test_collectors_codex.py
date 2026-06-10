@@ -168,6 +168,17 @@ def test_collector_recollect_updates_grown_session(tmp_path):
     repo.close()
 
 
+def test_iter_skips_overlong_line(tmp_path, monkeypatch):
+    """Аномально длинная (но валидная JSON) строка пропускается по лимиту _MAX_LINE."""
+    from timechecker.collectors import codex
+    monkeypatch.setattr(codex, "_MAX_LINE", 50)
+    f = tmp_path / "x.jsonl"
+    good = json.dumps({"type": "x"})
+    huge = json.dumps({"a": "z" * 200})  # валидный JSON, но длиннее лимита
+    f.write_text(good + "\n" + huge + "\n" + good, encoding="utf-8")
+    assert list(codex._iter_json_lines(f)) == [{"type": "x"}, {"type": "x"}]
+
+
 def test_cwd_resolver_boundaries(tmp_path):
     repo = SqliteRepository.open(tmp_path / "db.sqlite")
     proj_dir = tmp_path / "repo"

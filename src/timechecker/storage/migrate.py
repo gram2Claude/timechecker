@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .base import quote_ident
+
 _TABLES = [
     "employee", "project", "task", "ingest_run", "activity_event", "agent_session",
     "git_commit", "commit_task", "plane_transition", "daily_summary", "daily_task_time",
@@ -30,7 +32,9 @@ def migrate_sqlite_to_postgres(src: Any, dst: Any) -> dict:
             continue
         cols = list(rows[0].keys())
         ph = ",".join(["%s"] * len(cols))
-        sql = f"INSERT INTO {table}({','.join(cols)}) VALUES({ph}) ON CONFLICT DO NOTHING"
+        qcols = ",".join(quote_ident(c) for c in cols)  # имена из живой схемы → квотируем
+        sql = (f"INSERT INTO {quote_ident(table)}({qcols}) VALUES({ph}) "
+               "ON CONFLICT DO NOTHING")
         params = [tuple(r[c] for c in cols) for r in rows]
         with dst.conn.cursor() as cur:
             cur.executemany(sql, params)

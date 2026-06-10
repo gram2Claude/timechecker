@@ -16,13 +16,14 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 DEFAULT_CODEX_SINCE = "2026-06-01"
+_MAX_LINE = 10_000_000  # пропускать аномально длинные строки (защита памяти при стриме)
 # дешёвый фильтр по дате каталога пропускает и недавние ПРОШЛЫЕ дни: сессия, начатая до окна,
 # но ещё активная в нём, должна дозреть (повторный collect обновляет meta события)
 _PATH_MARGIN_DAYS = 3
@@ -59,21 +60,22 @@ class CodexSession:
     reasoning: int
 
 
-def _iter_json_lines(path: Path) -> list[dict]:
+def _iter_json_lines(path: Path) -> Iterator[dict]:
+    # построчный стрим (не read_text целиком) — память ограничена самой длинной строкой;
+    # живой файл: обрезанную/битую/гигантскую строку пропускаем
     try:
-        text = path.read_text(encoding="utf-8")
+        fh = path.open(encoding="utf-8")
     except OSError:
-        return []
-    out: list[dict] = []
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue  # живой файл: обрезанная/битая строка — пропускаем
-    return out
+        return
+    with fh:
+        for line in fh:
+            line = line.strip()
+            if not line or len(line) > _MAX_LINE:
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
 
 
 def parse_rollout(path: Path) -> CodexSession | None:
