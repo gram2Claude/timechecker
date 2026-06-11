@@ -10,11 +10,23 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 _MESSAGE_TYPES = ("user", "assistant")
 _MAX_LINE = 10_000_000  # пропускать аномально длинные строки (защита памяти при стриме)
+
+
+def _ts_key(ts: str) -> datetime:
+    """ISO-ts → aware datetime для СРАВНЕНИЯ (хранится исходная строка).
+
+    Лексикографика ISO-строк ненадёжна: разные офсеты (`23:50+03:00` < `22:00Z` по строке,
+    но позже по времени) и доли секунд (`.100Z` < `Z`) — тот же класс бага уже чинился в
+    metrics/engine.py. Naive-ts трактуем как UTC (контракт «ts всегда с офсетом» —
+    валидируется на границе в parse_transcript)."""
+    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 @dataclass
@@ -64,6 +76,10 @@ def parse_transcript(path: Path, project_key: str | None = None) -> list[ClaudeE
         ts, sid, uid = o.get("timestamp"), o.get("sessionId"), o.get("uuid")
         if not (ts and sid and uid):
             continue
+        try:
+            _ts_key(ts)  # валидация на границе: ниже по конвейеру ts сравниваются парсингом
+        except ValueError:
+            continue
         msg = o.get("message") or {}
         usage = msg.get("usage") or {}
         content = msg.get("content")
@@ -96,8 +112,11 @@ def derive_sessions(events: Iterable[ClaudeEvent]) -> dict[str, dict]:
                  "cache_creation": 0, "cache_read": 0, "model": None,
                  "project_key": e.project_key}
             sessions[e.session_uid] = s
-        s["started_at"] = min(s["started_at"], e.ts_utc)
-        s["ended_at"] = max(s["ended_at"], e.ts_utc)
+        # границы — по РАСПАРСЕННОМУ времени, не по строке (офсеты/доли секунд)
+        if _ts_key(e.ts_utc) < _ts_key(s["started_at"]):
+            s["started_at"] = e.ts_utc
+        if _ts_key(e.ts_utc) > _ts_key(s["ended_at"]):
+            s["ended_at"] = e.ts_utc
         s["message_count"] += 1
         s["tool_calls"] += e.tool_count
         s["tokens_in"] += e.tokens_in
@@ -120,7 +139,8 @@ def iter_project_events(projects_dir: Path, *, since: str | None = None) -> list
         for f in sorted(pdir.rglob("*.jsonl")):
             events.extend(parse_transcript(f, project_key=pdir.name))
     if since:
-        events = [e for e in events if e.ts_utc >= since]
+        since_key = _ts_key(since)
+        events = [e for e in events if _ts_key(e.ts_utc) >= since_key]
     return events
 
 
