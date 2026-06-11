@@ -15,7 +15,7 @@ from .base import quote_ident
 
 # Порядок вставки учитывает внешние ключи (родители раньше детей).
 _REF = ["employee", "project", "task", "ingest_run"]
-_RAW_SMALL = ["agent_session", "git_commit", "commit_task", "plane_transition"]
+_RAW_SMALL = ["agent_session", "git_commit", "commit_task", "task_transition"]
 _DAILY = ["daily_summary", "daily_task_time", "daily_idle", "daily_agent_usage"]
 _ALL = [*_REF, "activity_event", *_RAW_SMALL, *_DAILY]
 
@@ -30,7 +30,7 @@ _CONFLICT: dict[str, tuple[list[str], str]] = {
     "agent_session": (["id"], "update"),
     "git_commit": (["id"], "update"),
     "commit_task": (["commit_id", "task_id"], "nothing"),
-    "plane_transition": (["id"], "update"),
+    "task_transition": (["id"], "update"),
     "activity_event": (["id"], "update"),
 }
 

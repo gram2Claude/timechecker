@@ -1,6 +1,6 @@
 [project]
 name = "timechecker"
-version = "0.2.0"
+version = "0.3.0"
 description = "Учёт реального рабочего времени сотрудников по output-сигналам (Claude/git/Plane)"
 readme = "README.md"
 requires-python = ">=3.12"

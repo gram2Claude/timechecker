@@ -33,7 +33,7 @@ def test_sync_local_first(tmp_path):
 
     src = SqliteRepository.open(tmp_path / "src.db")
     emp = src.upsert_employee("Oleg", dev_branch="oleg")
-    proj = src.upsert_project("p", plane_identifier="TIME")
+    proj = src.upsert_project("p", identifier_prefix="TIME")
     t1 = src.upsert_task(proj, "TIME-1", title="x")
     src.insert_event(emp, "claude", "message", "2026-06-09T08:00:00Z", external_id="m1")
     src.insert_event(emp, "claude", "message", "2026-06-09T08:01:00Z")  # без external_id

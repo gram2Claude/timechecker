@@ -9,9 +9,9 @@
   6. effort-прокси агентов  → daily_agent_usage (messages/tokens/cost по task×source)
   7. фрагментация          → daily_summary.switches/longest_focus_min
   8. adherence             → daily_task_time.est_h (vs active_minutes; отношение считает отчёт)
-  9. гигиена процесса       → daily_summary.hygiene_score (доля коммитов с PLANE-ID)
+  9. гигиена процесса       → daily_summary.hygiene_score (доля коммитов с TASK-ID)
 
-Атрибуция активного времени к задаче — по «окнам в работе» из plane_transition (от перехода в
+Атрибуция активного времени к задаче — по «окнам в работе» из task_transition (от перехода в
 started-статус до completed). Все таймстемпы — UTC; «рабочий день» = дата по МСК (UTC+3).
 """
 
@@ -107,7 +107,7 @@ def compute_day(repo: Any, employee_id: int, work_date: str, *,
         repo.upsert_daily_summary(employee_id, work_date, tasks_count=0)
         return {"tasks": 0, "idle_episodes": 0, "active_minutes": 0}
 
-    windows = build_task_windows(repo.all_plane_transitions())
+    windows = build_task_windows(repo.all_task_transitions())
     tasks = {t["id"]: t for t in repo.all_tasks()}
     threshold = timedelta(minutes=idle_threshold_min)
 

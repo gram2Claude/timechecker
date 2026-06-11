@@ -7,7 +7,7 @@ from timechecker.registry import load_projects, register_project
 
 def test_register_and_load(tmp_path):
     db = tmp_path / "db.sqlite"
-    register_project(db, slug="proj1", repo_dir="/x", plane_project_id="p1", plane_prefix="PR")
+    register_project(db, slug="proj1", repo_dir="/x", prefix="PR")
     projects = load_projects(db)
     assert len(projects) == 1 and projects[0]["slug"] == "proj1"
     register_project(db, slug="proj1", repo_dir="/y")  # обновление по slug — без дубля

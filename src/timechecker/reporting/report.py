@@ -1,8 +1,7 @@
-"""Дневной отчёт (E4, TIME-25; E8 — мультиагентный расход): daily_* → markdown + HTML."""
+"""Дневной отчёт (E4, TIME-25; E8 — мультиагентный расход): daily_* → markdown."""
 
 from __future__ import annotations
 
-from html import escape
 from typing import Any
 
 from ..pricing import model_tier
@@ -117,7 +116,7 @@ def render_markdown(work_date: str, summary: dict | None, tasks: list[dict],
         lines.append(f"- **Модели:** {models}")
     lines += [
         f"- **Коммитов:** {s.get('commits', 0)} · **гигиена:** {s.get('hygiene_score', 0)} "
-        f"(доля с PLANE-ID)",
+        f"(доля с TASK-ID)",
         "",
         "## Время по задачам",
         "| Задача | Активно | План | Сообщ. | Токены | ≈ $ API | Коммиты |",
@@ -127,7 +126,7 @@ def render_markdown(work_date: str, summary: dict | None, tasks: list[dict],
         est = t.get("est_h")
         u = task_usage.get(t.get("task_id"), {})
         lines.append(
-            f"| {t.get('plane_identifier') or '—'} {t.get('title') or ''} | "
+            f"| {t.get('identifier') or '—'} {t.get('title') or ''} | "
             f"{_hm(t.get('active_minutes'))} | {f'{est}ч' if est is not None else '—'} | "
             f"{u.get('messages', 0)} | {u.get('tokens', 0)} | "
             f"{_usd(u.get('cost_usd'))} | {t.get('commits', 0)} |"
@@ -145,6 +144,3 @@ def render_markdown(work_date: str, summary: dict | None, tasks: list[dict],
     return "\n".join(lines) + "\n"
 
 
-def report_html(markdown: str) -> str:
-    """Простая обёртка markdown → HTML для комментария Plane (без внешних зависимостей)."""
-    return f"<pre>{escape(markdown)}</pre>"

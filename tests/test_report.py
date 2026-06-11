@@ -1,11 +1,11 @@
-from timechecker.reporting import build_daily_report, report_html
+from timechecker.reporting import build_daily_report
 from timechecker.storage import SqliteRepository
 
 
 def test_build_daily_report(tmp_path):
     r = SqliteRepository.open(tmp_path / "db.sqlite")
     emp = r.upsert_employee("Oleg")
-    proj = r.upsert_project("timechecker", plane_identifier="TIME")
+    proj = r.upsert_project("timechecker", identifier_prefix="TIME")
     t1 = r.upsert_task(proj, "TIME-1", title="schema", estimate_h=4.0)
     t2 = r.upsert_task(proj, "TIME-2", title="codex-only")
     r.upsert_daily_summary(
@@ -37,7 +37,6 @@ def test_build_daily_report(tmp_path):
     assert "**codex:** 10 ходов, 30000 токенов" in md  # задачная + неатрибутированная строки
     assert "Всего ИИ:" in md and "$5.00" in md  # 4.25 + 0.55 + 0.20
     assert "API-эквивалент" in md  # стоимость помечена как API-эквивалент, а не реальный счёт
-    assert report_html(md).startswith("<pre>")
     r.close()
 
 

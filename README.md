@@ -1,15 +1,18 @@
 # timechecker
 
-Учёт **реального** рабочего времени сотрудников по output-сигналам (Claude Code / git / Plane).
-Агент собирает метаданные активности на учётке сотрудника (Windows-сервер, RDP), считает дневные
-метрики и формирует отчёт. **Тела сообщений Claude не читаются и не хранятся — только метаданные.**
+Учёт **реального** рабочего времени сотрудников по output-сигналам (Claude Code / codex / git +
+собственный реестр задач). Агент собирает метаданные активности на учётке сотрудника
+(Windows-сервер, RDP), считает дневные метрики и формирует отчёт. **Тела сообщений Claude
+не читаются и не хранятся — только метаданные.**
 
 ## Возможности
-- **Сбор** output-сигналов: транскрипты Claude (таймстемпы/токены/тул-вызовы), git-коммиты
-  (с `PLANE-ID`), переходы статусов Plane. Хранилище — SQLite (нейтрально к серверной БД).
+- **Сбор** output-сигналов: транскрипты Claude (таймстемпы/токены/тул-вызовы), сессии codex,
+  git-коммиты (с `TASK-ID`). Хранилище — SQLite (нейтрально к серверной БД).
+- **Собственный реестр задач** (`timechecker task import/add/start/done/list`): задачи и переходы
+  статусов пишутся напрямую в БД; переходы дают «окна в работе» для атрибуции времени.
 - **Метрики** за день: задачи и время на задачу, простои ≥30 мин, span, active/gap, effort (токены),
   фрагментация, adherence (vs план), гигиена процесса.
-- **Отчёт**: markdown; опционально комментарий в Plane (аналитика — запросом к Supabase).
+- **Отчёт**: markdown (аналитика — запросом к Supabase).
 - **Эксплуатация**: расписание (Task Scheduler), диагностика, ретеншн.
 
 ## Установка
@@ -22,16 +25,17 @@ uv sync
 | Команда | Описание |
 |---|---|
 | `timechecker initdb` | создать/мигрировать БД (применить схему) |
-| `timechecker collect` | собрать output-сигналы в БД (Claude/hooks/git/Plane) |
+| `timechecker collect` | собрать output-сигналы в БД (Claude/codex/hooks/git) |
+| `timechecker task import/add/start/done/list` | собственный реестр задач (канон → БД, переходы статусов) |
 | `timechecker metrics [--date YYYY-MM-DD]` | посчитать дневные метрики → `daily_*` |
-| `timechecker report [--date] [--plane-issue ID]` | дневной отчёт (markdown), опц. в Plane |
+| `timechecker report [--date]` | дневной отчёт (markdown) |
 | `timechecker health` | диагностика (БД, последний сбор, расписание) |
 | `timechecker prune [--days N]` | очистить сырьё старше N дней (ретеншн) |
 | `timechecker deploy [--every 30] [--report-at 23:50]` | расписание collect + дневной отчёт |
 | `timechecker migrate-db` | разовый полный перенос SQLite → Postgres/Supabase |
 | `timechecker sync [--full] [--reset]` | инкрементальная репликация SQLite → Supabase (local-first) |
 | `timechecker pricing-refresh` | обновить ставки токенов из LiteLLM → `~/.wgp/pricing.json` |
-| `timechecker register-project --slug … --repo-dir …` | привязать проект к учёту (git/Plane) |
+| `timechecker register-project --slug … --repo-dir … [--prefix ID]` | привязать проект к учёту (git + задачи) |
 | `timechecker schedule` / `hook` / `projects` | примитивы планировщика / хуков / список проектов |
 
 ## Конфигурация (env `TIMECHECKER_*`)
@@ -39,8 +43,8 @@ uv sync
 - `TIMECHECKER_DB_PATH` — путь к SQLite (дефолт `~/.claude/timechecker/timechecker.db`)
 - `TIMECHECKER_CLAUDE_PROJECTS_DIR` — каталог транскриптов (дефолт `~/.claude/projects`)
 - `TIMECHECKER_MONITORED_REPO_DIR` / `_BRANCH` — рабочий git-репозиторий
-- `TIMECHECKER_PLANE_PROJECT_ID` / `_PREFIX` — проект Plane для зеркала задач/переходов
-- `TIMECHECKER_WGP_SECRETS` — путь к секретам Plane/GitHub (дефолт `~/.wgp/secrets.json`)
+- `TIMECHECKER_TASK_PREFIX` — префикс readable-ID задач для env-проекта (напр. `TIME`)
+- `TIMECHECKER_WGP_SECRETS` — путь к секретам GitHub/Supabase (дефолт `~/.wgp/secrets.json`)
 - `TIMECHECKER_RETENTION_DAYS` — срок хранения сырья (дефолт 30)
 - **Стоимость токенов** — оценка `≈ API-эквивалент` (model-aware, по семействам opus/sonnet/haiku);
   ставки: дефолт + override `~/.wgp/pricing.json` (или `TIMECHECKER_PRICING`), обновляются
@@ -58,7 +62,8 @@ uv sync
 - БД и секреты — вне публичного репозитория (`.gitignore`). Подробности — `docs/RUNBOOK.md`.
 
 ## Архитектура
-**Local-first:** `collectors/` (Claude/hooks/git/Plane) → `storage/` (repository DAO, локальный SQLite) →
+**Local-first:** `collectors/` (Claude/codex/hooks/git) + `tasks.py` (реестр задач) →
+`storage/` (repository DAO, локальный SQLite) →
 `metrics/` (движок) → `reporting/` (отчёт) → `ops/` (диагностика); поверх — `sync` (репликация SQLite →
 Supabase). Repository-интерфейс (`BaseSqlRepository` + `SqliteRepository`/`PostgresRepository`) позволяет
 менять СУБД без правок коллекторов/метрик/отчётов. Планирование/контроль — через `workflow_global_plan`.

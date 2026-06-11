@@ -1,6 +1,6 @@
 """Git-коллектор (TIME-11/12): коммиты dev-ветки → git_commit + commit_task + события.
 
-Читает ``git log`` из рабочего репозитория, извлекает ``PLANE-ID`` из сообщений, пишет
+Читает ``git log`` из рабочего репозитория, извлекает ``TASK-ID`` из сообщений, пишет
 метаданные (sha/branch/author/ts/subject) и связи коммит↔задача. Диффы/тело не читаются.
 """
 
@@ -15,7 +15,7 @@ from typing import Any
 
 _FS = "\x1f"  # разделитель полей
 _RS = "\x1e"  # разделитель записей
-_PLANE_RE = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
+_TASK_ID_RE = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
 
 
 @dataclass
@@ -24,7 +24,7 @@ class GitCommit:
     author: str
     ts_utc: str
     subject: str
-    plane_ids: list[str]
+    task_ids: list[str]
 
 
 def _to_utc_z(iso: str) -> str:
@@ -35,11 +35,11 @@ def _to_utc_z(iso: str) -> str:
         return iso
 
 
-def parse_plane_ids(text: str) -> list[str]:
-    """Извлечь уникальные PLANE-ID (напр. TIME-4) из текста, сохраняя порядок."""
+def parse_task_ids(text: str) -> list[str]:
+    """Извлечь уникальные TASK-ID (напр. TIME-4) из текста, сохраняя порядок."""
     seen: set[str] = set()
     out: list[str] = []
-    for m in _PLANE_RE.findall(text or ""):
+    for m in _TASK_ID_RE.findall(text or ""):
         if m not in seen:
             seen.add(m)
             out.append(m)
@@ -77,7 +77,7 @@ def read_commits(git_dir: Path, *, branch: str | None = None,
         if len(parts) < 4:
             continue
         out.append(GitCommit(sha=parts[0], author=parts[1], ts_utc=_to_utc_z(parts[2]),
-                             subject=parts[3], plane_ids=parse_plane_ids(parts[3])))
+                             subject=parts[3], task_ids=parse_task_ids(parts[3])))
     return out
 
 
@@ -98,14 +98,14 @@ class GitCollector:
                 employee_id, c.sha, project_id=project_id, branch=branch,
                 ts_utc=c.ts_utc, author=c.author, subject=c.subject,
             )
-            for pid in c.plane_ids:
-                tid = self.repo.task_id_by_identifier(pid)
+            for tid_ident in c.task_ids:
+                tid = self.repo.task_id_by_identifier(tid_ident)
                 if tid is not None:
                     self.repo.link_commit_task(cid, tid)
                     links += 1
             self.repo.insert_event(
                 employee_id, "git", "commit", c.ts_utc, project_id=project_id,
-                external_id=c.sha, meta={"branch": branch, "plane_ids": c.plane_ids},
+                external_id=c.sha, meta={"branch": branch, "task_ids": c.task_ids},
                 ingest_run_id=ingest_run_id,
             )
         return {"commits": len(commits), "commit_task_links": links}

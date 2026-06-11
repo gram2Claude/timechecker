@@ -12,14 +12,13 @@ from pathlib import Path
 from . import __version__
 from .collectors.hooks import HOOK_EVENTS, append_hook_event
 from .collectors.orchestrator import collect_all
-from .collectors.plane import PlaneHttpClient
 from .collectors.scheduler import register_daily_task, register_task, register_weekly_task
 from .config import Config
 from .logging_setup import get_logger, setup_logging
 from .metrics import compute_day
 from .ops import health_check
 from .registry import load_projects, register_project, registry_path
-from .reporting import build_daily_report, report_html
+from .reporting import build_daily_report
 from .storage import SqliteRepository, open_repository
 
 log = get_logger("timechecker.cli")
@@ -77,15 +76,6 @@ def _cmd_report(args: argparse.Namespace, cfg: Config) -> int:
         md_path = out_dir / f"{date}.md"
         md_path.write_text(rep["markdown"], encoding="utf-8")
         log.info("report %s → %s", date, md_path)
-        if args.plane_issue:
-            secrets = cfg.read_wgp_secrets()
-            client = PlaneHttpClient(
-                secrets.get("plane_base_url", "https://api.plane.so"),
-                secrets.get("plane_api_key", ""), secrets.get("plane_workspace_slug", ""),
-                cfg.plane_project_id or "",
-            )
-            client.post_issue_comment(args.plane_issue, report_html(rep["markdown"]))
-            log.info("report → Plane issue %s", args.plane_issue)
     finally:
         repo.close()
     return 0
@@ -122,10 +112,10 @@ def _cmd_daily(args: argparse.Namespace, cfg: Config) -> int:
     rc0 = 0
     if date is None:
         today = (datetime.now(UTC) + timedelta(hours=3)).date()
-        yns = argparse.Namespace(date=(today - timedelta(days=1)).isoformat(), plane_issue=None)
+        yns = argparse.Namespace(date=(today - timedelta(days=1)).isoformat())
         rc0 = _cmd_metrics(yns, cfg) or _cmd_report(yns, cfg)  # вчерашний md тоже актуализируем
         date = today.isoformat()
-    ns = argparse.Namespace(date=date, plane_issue=None)
+    ns = argparse.Namespace(date=date)
     rc1 = _cmd_metrics(ns, cfg)
     rc2 = _cmd_report(ns, cfg)
     return rc0 or rc1 or rc2
@@ -176,7 +166,7 @@ def _cmd_task(args: argparse.Namespace, cfg: Config) -> int:
         elif args.task_command == "list":
             rows = list_tasks(repo, slug=args.slug, open_only=args.open)
             for t in rows:
-                log.info("%-12s %-12s %s", t.get("plane_identifier"),
+                log.info("%-12s %-12s %s", t.get("identifier"),
                          t.get("status") or "-", t.get("title") or "")
             log.info("task list: %s задач", len(rows))
     except ValueError as e:
@@ -190,7 +180,7 @@ def _cmd_task(args: argparse.Namespace, cfg: Config) -> int:
 def _cmd_register_project(args: argparse.Namespace, cfg: Config) -> int:
     projects = register_project(
         cfg.db_path, slug=args.slug, repo_dir=args.repo_dir, branch=args.branch,
-        plane_project_id=args.plane_project_id, plane_prefix=args.plane_prefix)
+        prefix=args.prefix)
     log.info("register-project: '%s' привязан; проектов: %s → %s",
              args.slug, len(projects), registry_path(cfg.db_path))
     return 0
@@ -241,7 +231,8 @@ def _cmd_sync(args: argparse.Namespace, cfg: Config) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="timechecker",
-        description="Учёт реального рабочего времени по output-сигналам (Claude/git/Plane).",
+        description="Учёт реального рабочего времени по output-сигналам "
+                    "(Claude/codex/git + собственный реестр задач).",
     )
     p.add_argument("--version", action="version", version=f"timechecker {__version__}")
     p.add_argument(
@@ -272,7 +263,6 @@ def build_parser() -> argparse.ArgumentParser:
     sched_p.add_argument("--every", type=int, default=30, help="период, минут")
     report_p = sub.add_parser("report", help="Дневной отчёт (markdown) из daily_*")
     report_p.add_argument("--date", default=None, help="YYYY-MM-DD (МСК); по умолчанию сегодня")
-    report_p.add_argument("--plane-issue", default=None, help="issue для отчёта в Plane")
     sub.add_parser("health", help="Диагностика агента (БД, последний сбор, расписание)")
     prune_p = sub.add_parser("prune", help="Очистить сырьё старше N дней (ретеншн)")
     prune_p.add_argument("--days", type=int, default=None, help="дней (по умолчанию из конфига)")
@@ -301,12 +291,11 @@ def build_parser() -> argparse.ArgumentParser:
     tl = tsub.add_parser("list", help="Список задач из БД")
     tl.add_argument("--slug", default=None)
     tl.add_argument("--open", action="store_true", help="только незавершённые")
-    rp = sub.add_parser("register-project", help="Привязать проект к учёту времени (git/Plane)")
+    rp = sub.add_parser("register-project", help="Привязать проект к учёту времени (git + задачи)")
     rp.add_argument("--slug", required=True)
     rp.add_argument("--repo-dir", default=None)
     rp.add_argument("--branch", default=None)
-    rp.add_argument("--plane-project-id", default=None)
-    rp.add_argument("--plane-prefix", default=None)
+    rp.add_argument("--prefix", default=None, help="префикс readable-ID задач (напр. TIME)")
     sub.add_parser("projects", help="Список привязанных проектов")
     sub.add_parser("migrate-db", help="Перенести данные SQLite → Postgres (по db_url)")
     sync_p = sub.add_parser("sync", help="Реплицировать SQLite → Supabase (инкрементально)")
