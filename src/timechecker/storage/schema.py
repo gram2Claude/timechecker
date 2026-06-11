@@ -273,11 +273,13 @@ COMMIT;
 # и readable-ID теперь принадлежат собственному реестру задач (CLI `timechecker task`);
 # plane_issue_id оставлен как external_uid (историческая привязка к внешним трекерам).
 _V4 = """
+BEGIN;
 ALTER TABLE plane_transition RENAME TO task_transition;
 ALTER TABLE task RENAME COLUMN plane_identifier TO identifier;
 ALTER TABLE task RENAME COLUMN plane_issue_id TO external_uid;
 ALTER TABLE project RENAME COLUMN plane_identifier TO identifier_prefix;
 ALTER TABLE project DROP COLUMN plane_project_id;
+COMMIT;
 """
 
 MIGRATIONS: list[tuple[int, str]] = [

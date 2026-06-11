@@ -169,7 +169,7 @@ def _cmd_task(args: argparse.Namespace, cfg: Config) -> int:
                 log.info("%-12s %-12s %s", t.get("identifier"),
                          t.get("status") or "-", t.get("title") or "")
             log.info("task list: %s задач", len(rows))
-    except ValueError as e:
+    except (ValueError, OSError) as e:  # OSError: нет файла канона/нет прав — rc=1, не traceback
         log.error("task %s: %s", args.task_command, e)
         return 1
     finally:

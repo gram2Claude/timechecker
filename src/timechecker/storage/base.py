@@ -314,6 +314,9 @@ class BaseSqlRepository(Repository):
         }
 
     def prune_raw(self, before_utc):
+        # task_transition НЕ прунится: после E9 переходы — первичные данные собственного
+        # реестра (пишутся один раз CLI, локально невосстановимы), на них стоят окна
+        # атрибуции метрик; таблица компактна — хранится бессрочно, как daily_*
         self._exec("DELETE FROM commit_task WHERE commit_id IN "
                    "(SELECT id FROM git_commit WHERE COALESCE(ts_utc,'') < ?)", (before_utc,))
         total = 0
@@ -321,7 +324,6 @@ class BaseSqlRepository(Repository):
             "DELETE FROM activity_event WHERE ts_utc < ?",
             "DELETE FROM agent_session WHERE COALESCE(started_at,'') < ?",
             "DELETE FROM git_commit WHERE COALESCE(ts_utc,'') < ?",
-            "DELETE FROM task_transition WHERE COALESCE(ts_utc,'') < ?",
         ):
             total += self._delete_count(sql, (before_utc,))
         return total
