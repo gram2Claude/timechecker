@@ -102,6 +102,39 @@ def test_import_canon_keeps_registered_prefix(repo, tmp_path):
     assert repo.get_project("demo")["identifier_prefix"] == "TIME"
 
 
+def test_import_canon_rejects_duplicate_explicit_ids(repo, tmp_path):
+    """Финальное ревью (codex): дубль явного ID в каноне — ошибка ДО любых upsert,
+    а не молчаливое слияние двух задач в одну."""
+    canon = {"project": {"slug": "demo", "plane_identifier": "DEMO"},
+             "epochs": [{"id": "e1", "sprints": [{"id": "s1", "tasks": [
+                 {"id": "t1", "name": "a", "plane_identifier": "DEMO-1"},
+                 {"id": "t2", "name": "b", "plane_identifier": "DEMO-1"},
+             ]}]}]}
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps(canon, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(ValueError, match="DEMO-1"):
+        import_canon(repo, p)
+    assert repo.all_tasks() == []  # ничего не записано
+
+
+def test_import_canon_reuses_id_by_canon_task_id(repo, tmp_path):
+    """Финальное ревью (codex P1): сбой между upsert и writeback канона — при
+    ре-импорте задача без ID получает СВОЙ прежний ID по canon_task_id, а не новый."""
+    pid = repo.upsert_project("demo", identifier_prefix="DEMO")
+    repo.upsert_task(pid, "DEMO-7", canon_task_id="t1.1.2", title="из прошлого импорта")
+    canon = {"project": {"slug": "demo", "plane_identifier": "DEMO"},
+             "epochs": [{"id": "e1", "sprints": [{"id": "s1", "tasks": [
+                 {"id": "t1.1.2", "name": "из прошлого импорта"},  # ID потерян writeback-сбоем
+             ]}]}]}
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps(canon, ensure_ascii=False), encoding="utf-8")
+    res = import_canon(repo, p)
+    assert res["created"] == 0 and res["assigned_ids"] == 1
+    out = json.loads(p.read_text(encoding="utf-8"))
+    assert out["epochs"][0]["sprints"][0]["tasks"][0]["plane_identifier"] == "DEMO-7"
+    assert len(repo.all_tasks()) == 1  # дубль-строка не создана
+
+
 def test_reimport_does_not_reset_live_status(repo, tmp_path):
     """Ре-импорт канона (штатный replan) не откатывает статусы, которые ведёт реестр."""
     p = _write_canon(tmp_path)

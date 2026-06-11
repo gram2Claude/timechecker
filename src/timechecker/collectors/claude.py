@@ -10,23 +10,13 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .ts import to_utc_z, ts_key
+
 _MESSAGE_TYPES = ("user", "assistant")
 _MAX_LINE = 10_000_000  # пропускать аномально длинные строки (защита памяти при стриме)
-
-
-def _ts_key(ts: str) -> datetime:
-    """ISO-ts → aware datetime для СРАВНЕНИЯ (хранится исходная строка).
-
-    Лексикографика ISO-строк ненадёжна: разные офсеты (`23:50+03:00` < `22:00Z` по строке,
-    но позже по времени) и доли секунд (`.100Z` < `Z`) — тот же класс бага уже чинился в
-    metrics/engine.py. Naive-ts трактуем как UTC (контракт «ts всегда с офсетом» —
-    валидируется на границе в parse_transcript)."""
-    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 @dataclass
@@ -74,10 +64,12 @@ def parse_transcript(path: Path, project_key: str | None = None) -> list[ClaudeE
         if o.get("type") not in _MESSAGE_TYPES:
             continue
         ts, sid, uid = o.get("timestamp"), o.get("sessionId"), o.get("uuid")
-        if not (ts and sid and uid):
+        if not (ts and sid and uid and isinstance(ts, str)):
             continue
         try:
-            _ts_key(ts)  # валидация на границе: ниже по конвейеру ts сравниваются парсингом
+            # нормализация на границе: в БД уходит канонический UTC ...Z секундной точности —
+            # строковое SQL-окно events_between корректно только при едином формате хранения
+            ts = to_utc_z(ts)
         except ValueError:
             continue
         msg = o.get("message") or {}
@@ -112,10 +104,12 @@ def derive_sessions(events: Iterable[ClaudeEvent]) -> dict[str, dict]:
                  "cache_creation": 0, "cache_read": 0, "model": None,
                  "project_key": e.project_key}
             sessions[e.session_uid] = s
-        # границы — по РАСПАРСЕННОМУ времени, не по строке (офсеты/доли секунд)
-        if _ts_key(e.ts_utc) < _ts_key(s["started_at"]):
+        # границы — по РАСПАРСЕННОМУ времени, не по строке (робастно к любому вызывающему,
+        # хотя ts из parse_transcript уже нормализованы); ключ считаем один раз на событие
+        ek = ts_key(e.ts_utc)
+        if ek < ts_key(s["started_at"]):
             s["started_at"] = e.ts_utc
-        if _ts_key(e.ts_utc) > _ts_key(s["ended_at"]):
+        if ek > ts_key(s["ended_at"]):
             s["ended_at"] = e.ts_utc
         s["message_count"] += 1
         s["tool_calls"] += e.tool_count
@@ -139,8 +133,8 @@ def iter_project_events(projects_dir: Path, *, since: str | None = None) -> list
         for f in sorted(pdir.rglob("*.jsonl")):
             events.extend(parse_transcript(f, project_key=pdir.name))
     if since:
-        since_key = _ts_key(since)
-        events = [e for e in events if _ts_key(e.ts_utc) >= since_key]
+        since_key = ts_key(since)
+        events = [e for e in events if ts_key(e.ts_utc) >= since_key]
     return events
 
 

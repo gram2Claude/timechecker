@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .ts import TS_FMT, to_utc_z, ts_key
+
 HOOK_EVENTS = ("session-start", "session-end", "stop")
 
 
@@ -20,7 +22,7 @@ def append_hook_event(spool: Path, event: str, *, session_uid: str | None = None
     """Дописать событие хука в спул (создаёт каталог при необходимости)."""
     spool = Path(spool)
     spool.parent.mkdir(parents=True, exist_ok=True)
-    rec = {"event": event, "ts_utc": ts_utc or datetime.now(UTC).isoformat(),
+    rec = {"event": event, "ts_utc": ts_utc or datetime.now(UTC).strftime(TS_FMT),
            "session_uid": session_uid, "project_key": project_key}
     with spool.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -53,9 +55,17 @@ class HookCollector:
     def collect(self, employee_id: int, *, since: str | None = None,
                 ingest_run_id: int | None = None) -> dict:
         n = 0
+        since_key = ts_key(since) if since else None
         for r in read_hook_events(self.spool):
             ts, ev = r.get("ts_utc"), r.get("event")
-            if not ts or ev not in HOOK_EVENTS or (since and ts < since):
+            if not ts or not isinstance(ts, str) or ev not in HOOK_EVENTS:
+                continue
+            try:
+                # нормализация + parse-сравнение окна (лексикографика ISO-строк ненадёжна)
+                ts = to_utc_z(ts)
+            except ValueError:
+                continue
+            if since_key is not None and ts_key(ts) < since_key:
                 continue
             ext = f"{r.get('session_uid') or 'na'}:{ev}:{ts}"
             self.repo.insert_event(

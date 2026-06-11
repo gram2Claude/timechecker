@@ -87,14 +87,24 @@ def import_canon(repo: Any, canon_path: Path, *, slug: str | None = None) -> dic
               or default_prefix(slug))
     project_id = repo.upsert_project(slug, identifier_prefix=prefix)
     # явные ID всего канона резервируются ДО раздачи новых (P1: иначе задача без ID,
-    # стоящая раньше по файлу, заняла бы чужой ID и слилась с той задачей при upsert)
-    reserved = {t["plane_identifier"] for t in iter_canon_tasks(canon)
-                if t.get("plane_identifier")}
+    # стоящая раньше по файлу, заняла бы чужой ID и слилась с той задачей при upsert);
+    # дубли явных ID — ошибка канона, падаем ДО любых upsert (молчаливое слияние недопустимо)
+    explicit = [t["plane_identifier"] for t in iter_canon_tasks(canon)
+                if t.get("plane_identifier")]
+    dups = sorted({i for i in explicit if explicit.count(i) > 1})
+    if dups:
+        raise ValueError(f"в каноне дублируются явные ID: {', '.join(dups)}")
+    reserved = set(explicit)
+    # если БД уже знает задачу этого канона (по canon_task_id), переиспользуем её ID —
+    # лечит сбой между upsert и writeback: ре-импорт не раздаёт те же задачи заново
+    known_by_canon = {t["canon_task_id"]: t["identifier"] for t in repo.all_tasks()
+                      if t.get("project_id") == project_id and t.get("canon_task_id")}
     seen = created = assigned = 0
     for t in iter_canon_tasks(canon):
         ident = t.get("plane_identifier")
         if not ident:
-            ident = next_identifier(repo, prefix, reserved=reserved)
+            ident = (known_by_canon.get(t.get("id"))
+                     or next_identifier(repo, prefix, reserved=reserved))
             t["plane_identifier"] = ident
             reserved.add(ident)
             assigned += 1
