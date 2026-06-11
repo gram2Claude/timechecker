@@ -39,9 +39,11 @@
 
 ### Новый проект подключается автоматически
 При `/workflow_create_env` шаг 2.7 спрашивает про учёт времени; на «Да» выполняется
-`timechecker register-project --slug … --repo-dir … --plane-project-id … --plane-prefix …`.
-Дальше **ничего делать не нужно**: ежечасный `collect` подхватит проект (git/Plane) в SQLite, Claude
-собирается глобально, `sync` доносит в Supabase, дневной отчёт — в 23:50.
+`timechecker register-project --slug … --repo-dir … --branch … --prefix <IDENT>`.
+Задачи проекта публикуются в собственный реестр: `timechecker task import --plan <канон>`
+(фаза publish воркфлоу) либо `timechecker task add`. Дальше **ничего делать не нужно**:
+ежечасный `collect` подхватит git-коммиты проекта в SQLite, Claude собирается глобально,
+`sync` доносит в Supabase, дневной отчёт — в 23:50.
 
 > Задачи планировщика по умолчанию — «только при входе пользователя». Для 24/7 или нескольких
 > сотрудников переконфигурируй (`schtasks /Change /RU <user> /RP <pwd>` или per-user задачи).
@@ -52,7 +54,7 @@
 
 ## Безопасность
 - БД (`timechecker.db`) и `reports/` — на учётке сотрудника; доступ ограничить Windows-ACL.
-- Секреты Plane/GitHub — в `~/.wgp/secrets.json` (вне репозитория).
+- Секреты GitHub/Supabase — в `~/.wgp/secrets.json` (вне репозитория).
 - **Метаданные-only**: тела сообщений Claude не хранятся (проверяется `tests/test_security.py`).
 - Репозиторий пилота публичный (временно); до боевого запуска сделать приватным.
 
@@ -62,8 +64,9 @@
 - Дневные агрегаты `daily_*` — бессрочно (компактны).
 
 ## Диагностика
-- `ingest_run.status = partial` + `error` — один коллектор упал (Plane/git), остальные собрались.
-- Plane 403 — в запросах должен быть `User-Agent` (обход Cloudflare 1010) — уже в коде.
+- `ingest_run.status = partial` + `error` — один коллектор упал (git/claude/codex), остальные собрались.
+- Задачи не линкуются с коммитами — проверь, что канон импортирован (`timechecker task list --slug …`)
+  и в коммитах есть `TASK-ID` (формат `PREFIX-N`, напр. `TIME-55`).
 - git: 0 коммитов — проверь `TIMECHECKER_MONITORED_REPO_DIR` и ветку (есть fallback на HEAD).
 
 ## Backend: local-first (SQLite → Supabase)

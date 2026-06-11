@@ -51,12 +51,13 @@ def test_import_canon_idempotent_and_writeback(repo, tmp_path):
     p = _write_canon(tmp_path)
     res = import_canon(repo, p)
     assert res["tasks"] == 2 and res["created"] == 2 and res["assigned_ids"] == 1
-    # назначенный ID дописан обратно в канон (sequence после максимума: DEMO-2)
+    # назначенный ID дописан обратно в канон (sequence после максимума: DEMO-2);
+    # в каноне поле зовётся plane_identifier (формат wgp), в БД — task.identifier
     canon = json.loads(p.read_text(encoding="utf-8"))
     t2 = canon["epochs"][0]["sprints"][0]["tasks"][1]
     assert t2["plane_identifier"] == "DEMO-2"
     # статусы канона смапились на статусы метрик
-    by_ident = {t["plane_identifier"]: t for t in repo.all_tasks()}
+    by_ident = {t["identifier"]: t for t in repo.all_tasks()}
     assert by_ident["DEMO-1"]["status"] == DONE_STATE
     assert by_ident["DEMO-1"]["canon_task_id"] == "t1.1.1"
     assert by_ident["DEMO-2"]["status"] == "Todo"
@@ -76,7 +77,7 @@ def test_add_task_generates_sequence(repo, tmp_path):
 
 
 def test_next_identifier_ignores_foreign_prefixes(repo):
-    pid = repo.upsert_project("x", plane_identifier="AAA")
+    pid = repo.upsert_project("x", identifier_prefix="AAA")
     repo.upsert_task(pid, "AAA-7", title="t")
     repo.upsert_task(pid, "AAAB-99", title="другой префикс")
     assert next_identifier(repo, "AAA") == "AAA-8"
@@ -87,16 +88,16 @@ def test_transition_writes_window_and_is_idempotent(repo, tmp_path):
     emp = repo.upsert_employee("oleg")
     r1 = transition(repo, emp, "DEMO-2", STARTED_STATE, at="2026-06-11T09:00:00Z")
     transition(repo, emp, "DEMO-2", DONE_STATE, at="2026-06-11T11:30:00+03:00")  # офсет → UTC
-    trs = repo.all_plane_transitions()
+    trs = repo.all_task_transitions()
     assert [(t["to_state"], t["ts_utc"]) for t in trs] == [
         (STARTED_STATE, "2026-06-11T09:00:00Z"), (DONE_STATE, "2026-06-11T08:30:00Z")]
     assert r1["task_id"] == repo.task_id_by_identifier("DEMO-2")
     # статус задачи обновился
-    by_ident = {t["plane_identifier"]: t for t in repo.all_tasks()}
+    by_ident = {t["identifier"]: t for t in repo.all_tasks()}
     assert by_ident["DEMO-2"]["status"] == DONE_STATE
     # повтор с тем же --at не дублирует ни переход, ни событие
     transition(repo, emp, "DEMO-2", STARTED_STATE, at="2026-06-11T09:00:00Z")
-    assert len(repo.all_plane_transitions()) == 2
+    assert len(repo.all_task_transitions()) == 2
     events = repo.events_between(emp, "2026-06-11T00:00:00Z", "2026-06-11T23:59:59Z")
     assert len([e for e in events if e["source"] == "task"]) == 2
 
@@ -121,16 +122,16 @@ def test_cli_transition_feeds_metrics_attribution(repo, tmp_path):
     compute_day(repo, emp, "2026-06-11")
     per_task = {r["task_id"]: r for r in repo.daily_task_times(emp, "2026-06-11")}
     assert tid in per_task and per_task[tid]["active_minutes"] > 0
-    assert per_task[tid]["plane_identifier"] == "DEMO-2"
+    assert per_task[tid]["identifier"] == "DEMO-2"
 
 
 def test_list_tasks_filters_and_sorts(repo, tmp_path):
     import_canon(repo, _write_canon(tmp_path))
     add_task(repo, "other", "Чужая задача")
     rows = list_tasks(repo, slug="demo")
-    assert [t["plane_identifier"] for t in rows] == ["DEMO-1", "DEMO-2"]
+    assert [t["identifier"] for t in rows] == ["DEMO-1", "DEMO-2"]
     rows_open = list_tasks(repo, slug="demo", open_only=True)
-    assert [t["plane_identifier"] for t in rows_open] == ["DEMO-2"]  # DEMO-1 = Done
+    assert [t["identifier"] for t in rows_open] == ["DEMO-2"]  # DEMO-1 = Done
 
 
 def test_cli_task_commands_end_to_end(tmp_path, monkeypatch):

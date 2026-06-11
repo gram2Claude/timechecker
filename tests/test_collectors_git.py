@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from timechecker.collectors.git import GitCollector, parse_plane_ids, read_commits
+from timechecker.collectors.git import GitCollector, parse_task_ids, read_commits
 from timechecker.storage import SqliteRepository
 
 
@@ -22,10 +22,10 @@ def _make_repo(d: Path) -> None:
     _git(d, "commit", "-q", "-m", "chore: no id here")
 
 
-def test_parse_plane_ids():
-    assert parse_plane_ids("feat: x (TIME-4) and TIME-12") == ["TIME-4", "TIME-12"]
-    assert parse_plane_ids("no id") == []
-    assert parse_plane_ids("TIME-4 TIME-4") == ["TIME-4"]  # дедуп
+def test_parse_task_ids():
+    assert parse_task_ids("feat: x (TIME-4) and TIME-12") == ["TIME-4", "TIME-12"]
+    assert parse_task_ids("no id") == []
+    assert parse_task_ids("TIME-4 TIME-4") == ["TIME-4"]  # дедуп
 
 
 def test_read_commits(tmp_path):
@@ -33,7 +33,7 @@ def test_read_commits(tmp_path):
     _make_repo(repo_dir)
     commits = read_commits(repo_dir)
     assert len(commits) == 2
-    assert any(c.plane_ids == ["TIME-4"] for c in commits)
+    assert any(c.task_ids == ["TIME-4"] for c in commits)
 
 
 def test_read_commits_non_repo(tmp_path):
@@ -52,7 +52,7 @@ def test_git_collector_writes_idempotent(tmp_path):
     _make_repo(repo_dir)
     repo = SqliteRepository.open(tmp_path / "db.sqlite")
     emp = repo.upsert_employee("Oleg")
-    proj = repo.upsert_project("timechecker", plane_identifier="TIME")
+    proj = repo.upsert_project("timechecker", identifier_prefix="TIME")
     repo.upsert_task(proj, "TIME-4", title="schema")
     counts = GitCollector(repo, repo_dir).collect(emp, project_id=proj)
     assert counts["commits"] == 2

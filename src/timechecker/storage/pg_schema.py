@@ -255,8 +255,18 @@ ALTER TABLE daily_task_time DROP COLUMN claude_cache_creation;
 ALTER TABLE daily_task_time DROP COLUMN claude_cost_usd;
 """
 
+# v4 (E9.1, plane_exit): зеркало SQLite-v4 — нейтральные имена вместо plane_*.
+_V4 = """
+ALTER TABLE plane_transition RENAME TO task_transition;
+ALTER TABLE task RENAME COLUMN plane_identifier TO identifier;
+ALTER TABLE task RENAME COLUMN plane_issue_id TO external_uid;
+ALTER TABLE project RENAME COLUMN plane_identifier TO identifier_prefix;
+ALTER TABLE project DROP COLUMN plane_project_id;
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _V1),
     (2, _V2),
     (3, _V3),
+    (4, _V4),
 ]

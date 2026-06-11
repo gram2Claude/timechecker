@@ -47,7 +47,7 @@ def next_identifier(repo: Any, prefix: str) -> str:
     pat = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
     mx = 0
     for t in repo.all_tasks():
-        m = pat.match(t.get("plane_identifier") or "")
+        m = pat.match(t.get("identifier") or "")
         if m:
             mx = max(mx, int(m.group(1)))
     return f"{prefix}-{mx + 1}"
@@ -62,9 +62,9 @@ def iter_canon_tasks(canon: dict):
 def import_canon(repo: Any, canon_path: Path, *, slug: str | None = None) -> dict:
     """Идемпотентный импорт канона плана в БД.
 
-    Задачам без readable-ID назначает "{prefix}-{n}" и дописывает его обратно в канон-JSON
-    (поле plane_identifier — имя сохранено для совместимости со скриптами wgp до E9.1),
-    чтобы конвенция коммитов [PREFIX-NN] продолжала работать.
+    Задачам без readable-ID назначает "{prefix}-{n}" и дописывает его обратно в канон-JSON.
+    В каноне поле ID намеренно осталось ``plane_identifier`` — это формат workflow_global_plan,
+    его читают wgp-скрипты (gate-merge и др.); в БД оно ложится в ``task.identifier``.
     """
     canon = json.loads(canon_path.read_text(encoding="utf-8"))
     proj = canon.get("project", {})
@@ -72,7 +72,7 @@ def import_canon(repo: Any, canon_path: Path, *, slug: str | None = None) -> dic
     if not slug:
         raise ValueError("в каноне нет project.slug (и --slug не задан)")
     prefix = proj.get("plane_identifier") or default_prefix(slug)
-    project_id = repo.upsert_project(slug, plane_identifier=prefix)
+    project_id = repo.upsert_project(slug, identifier_prefix=prefix)
     seen = created = assigned = 0
     for t in iter_canon_tasks(canon):
         ident = t.get("plane_identifier")
@@ -98,8 +98,8 @@ def add_task(repo: Any, slug: str, title: str, *, estimate_h: float | None = Non
              canon_id: str | None = None, prefix: str | None = None) -> str:
     """Одиночная задача вне канона; возвращает назначенный readable-ID."""
     project = repo.get_project(slug)
-    pfx = prefix or (project or {}).get("plane_identifier") or default_prefix(slug)
-    project_id = repo.upsert_project(slug, plane_identifier=pfx)
+    pfx = prefix or (project or {}).get("identifier_prefix") or default_prefix(slug)
+    project_id = repo.upsert_project(slug, identifier_prefix=pfx)
     ident = next_identifier(repo, pfx)
     repo.upsert_task(project_id, ident, canon_task_id=canon_id, title=title,
                      estimate_h=estimate_h, status="Todo")
@@ -108,15 +108,15 @@ def add_task(repo: Any, slug: str, title: str, *, estimate_h: float | None = Non
 
 def transition(repo: Any, employee_id: int, identifier: str, to_state: str, *,
                at: str | None = None) -> dict:
-    """Переход статуса: plane_transition + событие status_change + task.status."""
+    """Переход статуса: task_transition + событие status_change + task.status."""
     tid = repo.task_id_by_identifier(identifier)
     if tid is None:
         raise ValueError(f"задача {identifier!r} не найдена — сначала task import/add")
     task = next(t for t in repo.all_tasks() if t["id"] == tid)
     ts = _normalize_ts(at) if at else _now_utc()
     ext = f"cli:{identifier}:{to_state}:{ts}"
-    repo.insert_plane_transition(tid, from_state=task.get("status"), to_state=to_state,
-                                 ts_utc=ts, external_id=ext)
+    repo.insert_task_transition(tid, from_state=task.get("status"), to_state=to_state,
+                                ts_utc=ts, external_id=ext)
     repo.insert_event(employee_id, "task", "status_change", ts, task_id=tid,
                       project_id=task.get("project_id"), external_id=ext,
                       meta={"to": to_state})
@@ -137,4 +137,4 @@ def list_tasks(repo: Any, *, slug: str | None = None, open_only: bool = False) -
         tasks = [t for t in tasks if t["project_id"] == pid]
     if open_only:
         tasks = [t for t in tasks if (t.get("status") or "") not in _OPEN_EXCLUDES]
-    return sorted(tasks, key=lambda t: _ident_key(t.get("plane_identifier") or ""))
+    return sorted(tasks, key=lambda t: _ident_key(t.get("identifier") or ""))

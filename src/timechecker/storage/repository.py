@@ -24,12 +24,12 @@ class Repository(ABC):
     @abstractmethod
     def upsert_project(
         self, slug: str, *, claude_project_key: str | None = None, repo: str | None = None,
-        plane_project_id: str | None = None, plane_identifier: str | None = None,
+        identifier_prefix: str | None = None,
     ) -> int: ...
 
     @abstractmethod
     def upsert_task(
-        self, project_id: int, plane_identifier: str, *, plane_issue_id: str | None = None,
+        self, project_id: int, identifier: str, *, external_uid: str | None = None,
         canon_task_id: str | None = None, title: str | None = None,
         estimate_h: float | None = None, status: str | None = None,
     ) -> int: ...
@@ -68,7 +68,7 @@ class Repository(ABC):
     def link_commit_task(self, commit_id: int, task_id: int) -> None: ...
 
     @abstractmethod
-    def insert_plane_transition(
+    def insert_task_transition(
         self, task_id: int, *, from_state: str | None = None, to_state: str | None = None,
         ts_utc: str | None = None, external_id: str | None = None,
     ) -> int: ...
@@ -107,13 +107,13 @@ class Repository(ABC):
     def get_project(self, slug: str) -> dict | None: ...
 
     @abstractmethod
-    def task_id_by_identifier(self, plane_identifier: str) -> int | None: ...
+    def task_id_by_identifier(self, identifier: str) -> int | None: ...
 
     @abstractmethod
     def all_tasks(self) -> list[dict]: ...
 
     @abstractmethod
-    def all_plane_transitions(self) -> list[dict]: ...
+    def all_task_transitions(self) -> list[dict]: ...
 
     @abstractmethod
     def commits_between(self, employee_id: int, start_utc: str, end_utc: str) -> list[dict]: ...

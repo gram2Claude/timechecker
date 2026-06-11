@@ -1,6 +1,6 @@
 """Конфигурация timechecker (TIME-2).
 
-Слой конфигурации: пути к артефактам Claude, секреты wgp (Plane/GitHub),
+Слой конфигурации: пути к артефактам Claude, секреты wgp (GitHub/Supabase),
 репозиторий и ветки, маппинг сотрудник↔ветка (= имя пользователя Windows в нижнем регистре).
 Значения берутся из переменных окружения ``TIMECHECKER_*`` с разумными дефолтами.
 """
@@ -42,8 +42,7 @@ class Config:
     project_slug: str | None
     monitored_repo_dir: Path | None
     monitored_repo_branch: str | None
-    plane_project_id: str | None
-    plane_identifier_prefix: str | None
+    task_prefix: str | None
     retention_days: int
     db_url: str | None = field(repr=False)  # DSN с паролем — не светить в repr/логах/трейсбэках
     collect_lookback_days: int
@@ -87,8 +86,9 @@ class Config:
             project_slug=_env("TIMECHECKER_PROJECT_SLUG", None),
             monitored_repo_dir=Path(repo_dir) if repo_dir else None,
             monitored_repo_branch=_env("TIMECHECKER_MONITORED_REPO_BRANCH", None),
-            plane_project_id=_env("TIMECHECKER_PLANE_PROJECT_ID", None),
-            plane_identifier_prefix=_env("TIMECHECKER_PLANE_PREFIX", None),
+            # легаси-фоллбек TIMECHECKER_PLANE_PREFIX — на случай старых env-конфигов
+            task_prefix=_env("TIMECHECKER_TASK_PREFIX", None)
+            or _env("TIMECHECKER_PLANE_PREFIX", None),
             retention_days=int(_env("TIMECHECKER_RETENTION_DAYS", "30") or "30"),
             db_url=db_url,
             collect_lookback_days=int(_env("TIMECHECKER_COLLECT_LOOKBACK_DAYS", "2") or "2"),
@@ -99,7 +99,7 @@ class Config:
         return self.employee_username, self.dev_branch
 
     def read_wgp_secrets(self) -> dict:
-        """Секреты wgp (Plane/GitHub). Пустой dict, если файла нет/он битый."""
+        """Секреты wgp (GitHub/Supabase). Пустой dict, если файла нет/он битый."""
         try:
             return json.loads(self.wgp_secrets_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):

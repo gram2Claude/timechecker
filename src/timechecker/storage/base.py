@@ -124,31 +124,30 @@ class BaseSqlRepository(Repository):
         return self._id("employee", "windows_username=?", (windows_username,))
 
     def upsert_project(self, slug, *, claude_project_key=None, repo=None,
-                       plane_project_id=None, plane_identifier=None):
+                       identifier_prefix=None):
         self._exec(
-            "INSERT INTO project(slug, claude_project_key, repo, plane_project_id, "
-            "plane_identifier, created_at) VALUES(?,?,?,?,?,?) ON CONFLICT(slug) DO UPDATE SET "
+            "INSERT INTO project(slug, claude_project_key, repo, "
+            "identifier_prefix, created_at) VALUES(?,?,?,?,?) ON CONFLICT(slug) DO UPDATE SET "
             "claude_project_key=COALESCE(excluded.claude_project_key, project.claude_project_key), "
             "repo=COALESCE(excluded.repo, project.repo), "
-            "plane_project_id=COALESCE(excluded.plane_project_id, project.plane_project_id), "
-            "plane_identifier=COALESCE(excluded.plane_identifier, project.plane_identifier)",
-            (slug, claude_project_key, repo, plane_project_id, plane_identifier, _now()))
+            "identifier_prefix=COALESCE(excluded.identifier_prefix, project.identifier_prefix)",
+            (slug, claude_project_key, repo, identifier_prefix, _now()))
         return self._id("project", "slug=?", (slug,))
 
-    def upsert_task(self, project_id, plane_identifier, *, plane_issue_id=None,
+    def upsert_task(self, project_id, identifier, *, external_uid=None,
                     canon_task_id=None, title=None, estimate_h=None, status=None):
         self._exec(
-            "INSERT INTO task(project_id, plane_identifier, plane_issue_id, canon_task_id, "
+            "INSERT INTO task(project_id, identifier, external_uid, canon_task_id, "
             "title, estimate_h, status, updated_at) VALUES(?,?,?,?,?,?,?,?) "
-            "ON CONFLICT(plane_identifier) DO UPDATE SET project_id=excluded.project_id, "
-            "plane_issue_id=COALESCE(excluded.plane_issue_id, task.plane_issue_id), "
+            "ON CONFLICT(identifier) DO UPDATE SET project_id=excluded.project_id, "
+            "external_uid=COALESCE(excluded.external_uid, task.external_uid), "
             "canon_task_id=COALESCE(excluded.canon_task_id, task.canon_task_id), "
             "title=COALESCE(excluded.title, task.title), "
             "estimate_h=COALESCE(excluded.estimate_h, task.estimate_h), "
             "status=COALESCE(excluded.status, task.status), updated_at=excluded.updated_at",
-            (project_id, plane_identifier, plane_issue_id, canon_task_id, title, estimate_h,
+            (project_id, identifier, external_uid, canon_task_id, title, estimate_h,
              status, _now()))
-        return self._id("task", "plane_identifier=?", (plane_identifier,))
+        return self._id("task", "identifier=?", (identifier,))
 
     # ---- прогоны сбора ----
     def start_ingest_run(self, employee_id, *, window_from=None, window_to=None, sources=None):
@@ -193,15 +192,15 @@ class BaseSqlRepository(Repository):
         self._exec("INSERT INTO commit_task(commit_id, task_id) VALUES(?,?) "
                    "ON CONFLICT(commit_id, task_id) DO NOTHING", (commit_id, task_id))
 
-    def insert_plane_transition(self, task_id, *, from_state=None, to_state=None,
-                                ts_utc=None, external_id=None):
-        sql = ("INSERT INTO plane_transition(task_id, from_state, to_state, ts_utc, external_id) "
+    def insert_task_transition(self, task_id, *, from_state=None, to_state=None,
+                               ts_utc=None, external_id=None):
+        sql = ("INSERT INTO task_transition(task_id, from_state, to_state, ts_utc, external_id) "
                "VALUES(?,?,?,?,?) ON CONFLICT(external_id) DO UPDATE SET "
                "from_state=excluded.from_state, to_state=excluded.to_state, ts_utc=excluded.ts_utc")
         params = (task_id, from_state, to_state, ts_utc, external_id)
         if external_id is not None:
             self._exec(sql, params)
-            return self._id("plane_transition", "external_id=?", (external_id,))
+            return self._id("task_transition", "external_id=?", (external_id,))
         return self._insert(sql, params)
 
     # ---- дневные агрегаты ----
@@ -243,15 +242,15 @@ class BaseSqlRepository(Repository):
     def get_project(self, slug):
         return self._fetchone("SELECT * FROM project WHERE slug=?", (slug,))
 
-    def task_id_by_identifier(self, plane_identifier):
-        v = self._scalar("SELECT id FROM task WHERE plane_identifier=?", (plane_identifier,))
+    def task_id_by_identifier(self, identifier):
+        v = self._scalar("SELECT id FROM task WHERE identifier=?", (identifier,))
         return int(v) if v is not None else None
 
     def all_tasks(self):
         return self._query("SELECT * FROM task")
 
-    def all_plane_transitions(self):
-        return self._query("SELECT task_id, from_state, to_state, ts_utc FROM plane_transition "
+    def all_task_transitions(self):
+        return self._query("SELECT task_id, from_state, to_state, ts_utc FROM task_transition "
                            "WHERE ts_utc IS NOT NULL")
 
     def commits_between(self, employee_id, start_utc, end_utc):
@@ -283,7 +282,7 @@ class BaseSqlRepository(Repository):
 
     def daily_task_times(self, employee_id, work_date):
         return self._query(
-            "SELECT d.*, t.plane_identifier, t.title FROM daily_task_time d "
+            "SELECT d.*, t.identifier, t.title FROM daily_task_time d "
             "JOIN task t ON t.id = d.task_id "
             "WHERE d.employee_id=? AND d.work_date=? ORDER BY d.active_minutes DESC",
             (employee_id, work_date))
@@ -295,7 +294,7 @@ class BaseSqlRepository(Repository):
 
     def daily_agent_usage(self, employee_id, work_date):
         return self._query(
-            "SELECT u.*, t.plane_identifier, t.title FROM daily_agent_usage u "
+            "SELECT u.*, t.identifier, t.title FROM daily_agent_usage u "
             "LEFT JOIN task t ON t.id = u.task_id "
             "WHERE u.employee_id=? AND u.work_date=? ORDER BY u.tokens DESC",
             (employee_id, work_date))
@@ -310,7 +309,7 @@ class BaseSqlRepository(Repository):
             return int(self._scalar(f"SELECT COUNT(*) FROM {table}"))
         return {
             "events": n("activity_event"), "agent_sessions": n("agent_session"),
-            "git_commits": n("git_commit"), "plane_transitions": n("plane_transition"),
+            "git_commits": n("git_commit"), "task_transitions": n("task_transition"),
             "tasks": n("task"), "daily_summaries": n("daily_summary"),
         }
 
@@ -322,7 +321,7 @@ class BaseSqlRepository(Repository):
             "DELETE FROM activity_event WHERE ts_utc < ?",
             "DELETE FROM agent_session WHERE COALESCE(started_at,'') < ?",
             "DELETE FROM git_commit WHERE COALESCE(ts_utc,'') < ?",
-            "DELETE FROM plane_transition WHERE COALESCE(ts_utc,'') < ?",
+            "DELETE FROM task_transition WHERE COALESCE(ts_utc,'') < ?",
         ):
             total += self._delete_count(sql, (before_utc,))
         return total

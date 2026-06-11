@@ -269,8 +269,20 @@ ALTER TABLE daily_task_time DROP COLUMN claude_cost_usd;
 COMMIT;
 """
 
+# v4 (E9.1, plane_exit): Plane выведен из контура — нейтральные имена. Таблица переходов
+# и readable-ID теперь принадлежат собственному реестру задач (CLI `timechecker task`);
+# plane_issue_id оставлен как external_uid (историческая привязка к внешним трекерам).
+_V4 = """
+ALTER TABLE plane_transition RENAME TO task_transition;
+ALTER TABLE task RENAME COLUMN plane_identifier TO identifier;
+ALTER TABLE task RENAME COLUMN plane_issue_id TO external_uid;
+ALTER TABLE project RENAME COLUMN plane_identifier TO identifier_prefix;
+ALTER TABLE project DROP COLUMN plane_project_id;
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _V1),
     (2, _V2),
     (3, _V3),
+    (4, _V4),
 ]

@@ -26,12 +26,12 @@ def test_task_windows_and_attribution():
 def _setup(tmp_path):
     r = SqliteRepository.open(tmp_path / "db.sqlite")
     emp = r.upsert_employee("Oleg", dev_branch="oleg")
-    proj = r.upsert_project("timechecker", plane_identifier="TIME")
+    proj = r.upsert_project("timechecker", identifier_prefix="TIME")
     t1 = r.upsert_task(proj, "TIME-1", title="x", estimate_h=4.0)
-    r.insert_plane_transition(t1, from_state="Backlog", to_state="In Progress",
-                              ts_utc="2026-06-09T05:00:00Z", external_id="tr1")
-    r.insert_plane_transition(t1, from_state="In Progress", to_state="Done",
-                              ts_utc="2026-06-09T09:00:00Z", external_id="tr2")
+    r.insert_task_transition(t1, from_state="Backlog", to_state="In Progress",
+                             ts_utc="2026-06-09T05:00:00Z", external_id="tr1")
+    r.insert_task_transition(t1, from_state="In Progress", to_state="Done",
+                             ts_utc="2026-06-09T09:00:00Z", external_id="tr2")
     for ts in ("06:00:00", "06:05:00", "06:10:00", "07:00:00", "07:05:00"):
         full = f"2026-06-09T{ts}Z"
         r.insert_event(emp, "claude", "message", full, external_id=full,
@@ -54,7 +54,7 @@ def test_compute_day_metrics(tmp_path):
     assert summ["idle_ge30_count"] == 1
     assert summ["idle_ge30_minutes"] == 50
     assert summ["commits"] == 1
-    assert summ["hygiene_score"] == 1.0  # коммит с PLANE-ID
+    assert summ["hygiene_score"] == 1.0  # коммит с TASK-ID
     assert summ["tasks_count"] == 1
     assert "claude_tokens" not in summ  # v3: расход переехал в daily_agent_usage
 

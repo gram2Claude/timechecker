@@ -43,12 +43,12 @@ def test_postgres_repository_roundtrip():
     repo = PostgresRepository(conn)
     try:
         repo.apply_migrations()
-        assert repo.schema_version() == 3
-        assert repo.apply_migrations() == 3  # идемпотентно
+        assert repo.schema_version() == 4
+        assert repo.apply_migrations() == 4  # идемпотентно
 
         emp = repo.upsert_employee("Oleg", dev_branch="oleg")
         assert repo.upsert_employee("Oleg", display_name="O") == emp  # без дубля
-        proj = repo.upsert_project("p", plane_identifier="TIME")
+        proj = repo.upsert_project("p", identifier_prefix="TIME")
         repo.upsert_task(proj, "TIME-1", title="x", estimate_h=4.0)
 
         e1 = repo.insert_event(emp, "claude", "message", "2026-06-09T08:00:00Z",
@@ -79,7 +79,7 @@ def test_migrate_sqlite_to_postgres(tmp_path):
 
     src = SqliteRepository.open(tmp_path / "src.db")
     emp = src.upsert_employee("Oleg", dev_branch="oleg")
-    proj = src.upsert_project("p", plane_identifier="TIME")
+    proj = src.upsert_project("p", identifier_prefix="TIME")
     src.upsert_task(proj, "TIME-1", title="x", estimate_h=4.0)
     src.insert_event(emp, "claude", "message", "2026-06-09T08:00:00Z", external_id="m1",
                      meta={"tokens_in": 3})

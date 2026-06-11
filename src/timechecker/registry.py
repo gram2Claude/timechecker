@@ -1,8 +1,10 @@
-"""Реестр мониторимых проектов: per-project привязка git/Plane для учёта времени.
+"""Реестр мониторимых проектов: per-project привязка git для учёта времени.
 
 Хранится рядом с БД (``<db_dir>/projects.json``). Команда ``timechecker register-project``
 добавляет/обновляет запись; оркестратор сбора проходит по всем зарегистрированным проектам
-(git + Plane). Claude-транскрипты собираются глобально и в реестре не нуждаются.
+(git-коммиты; задачи приходят из собственного реестра — `timechecker task import/add`).
+Claude-транскрипты собираются глобально и в реестре не нуждаются. Поле ``prefix`` — префикс
+readable-ID задач; легаси-ключ ``plane_prefix`` в существующих файлах читается оркестратором.
 """
 
 from __future__ import annotations
@@ -27,11 +29,9 @@ def load_projects(db_path: Any) -> list[dict]:
 
 
 def register_project(db_path: Any, *, slug: str, repo_dir: str | None = None,
-                     branch: str | None = None, plane_project_id: str | None = None,
-                     plane_prefix: str | None = None) -> list[dict]:
+                     branch: str | None = None, prefix: str | None = None) -> list[dict]:
     """Добавить/обновить проект в реестре (по slug). Возвращает полный список проектов."""
-    entry = {"slug": slug, "repo_dir": repo_dir, "branch": branch,
-             "plane_project_id": plane_project_id, "plane_prefix": plane_prefix}
+    entry = {"slug": slug, "repo_dir": repo_dir, "branch": branch, "prefix": prefix}
     projects = [x for x in load_projects(db_path) if x.get("slug") != slug]
     projects.append(entry)
     p = registry_path(db_path)

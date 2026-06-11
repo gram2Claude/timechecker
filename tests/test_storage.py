@@ -20,15 +20,16 @@ def test_quote_ident():
 
 def test_migrations_idempotent(tmp_path):
     conn = init_db(tmp_path / "t.db")
-    assert current_version(conn) == 3
+    assert current_version(conn) == 4
     # повторное применение — без ошибок, версия не меняется
-    assert apply_migrations(conn) == 3
-    assert current_version(conn) == 3
+    assert apply_migrations(conn) == 4
+    assert current_version(conn) == 4
     conn.close()
 
 
-def test_migration_v3_upgrade_with_data(tmp_path):
-    """Апгрейд v2→v3 с данными: пересоздание agent_session + бэкфилл daily_agent_usage."""
+def test_migration_upgrade_with_data(tmp_path):
+    """Апгрейд v2→v4 с данными: пересоздание agent_session (v3), бэкфилл daily_agent_usage (v3),
+    переименования plane_* → нейтральные (v4)."""
     from datetime import UTC, datetime
 
     from timechecker.storage.db import connect
@@ -66,7 +67,13 @@ def test_migration_v3_upgrade_with_data(tmp_path):
         "claude_cost_usd, computed_at) VALUES(1, '2026-06-08', 10, 3000, 0.5, ?)", (now,))
     conn.commit()
 
-    assert apply_migrations(conn) == 3
+    assert apply_migrations(conn) == 4
+
+    # v4: переименования вступили в силу (без потери данных)
+    t = conn.execute("SELECT identifier FROM task WHERE id=7").fetchone()
+    assert t["identifier"] == "TIME-7"
+    cols_p = {r["name"] for r in conn.execute("PRAGMA table_info(project)").fetchall()}
+    assert "identifier_prefix" in cols_p and "plane_project_id" not in cols_p
 
     s = conn.execute("SELECT * FROM agent_session WHERE session_uid='s1'").fetchone()
     assert s["id"] == 3 and s["source"] == "claude" and s["tokens_out"] == 200
@@ -120,7 +127,7 @@ def test_event_idempotent_by_external_id(tmp_path):
 def test_full_chain(tmp_path):
     r = _repo(tmp_path)
     emp = r.upsert_employee("Oleg", dev_branch="oleg")
-    proj = r.upsert_project("timechecker", repo="gram2Claude/timechecker", plane_identifier="TIME")
+    proj = r.upsert_project("timechecker", repo="gram2Claude/timechecker", identifier_prefix="TIME")
     task = r.upsert_task(proj, "TIME-4", canon_task_id="t1.2.1", title="schema",
                          estimate_h=7.25, status="in_progress")
     run = r.start_ingest_run(emp, sources="claude,git")
@@ -138,8 +145,8 @@ def test_full_chain(tmp_path):
     r.link_commit_task(com, task)
     r.link_commit_task(com, task)  # повтор связи — без ошибки
 
-    r.insert_plane_transition(task, from_state="unstarted", to_state="started",
-                              ts_utc="2026-06-09T07:00:00Z", external_id="tr-1")
+    r.insert_task_transition(task, from_state="unstarted", to_state="started",
+                             ts_utc="2026-06-09T07:00:00Z", external_id="tr-1")
     r.finish_ingest_run(run, "ok", counts={"events": 1})
 
     r.upsert_daily_summary(emp, "2026-06-09", active_minutes=120, tasks_count=1)
@@ -157,7 +164,7 @@ def test_full_chain(tmp_path):
     codex_row = next(x for x in rows if x["source"] == "codex")
     assert codex_row["task_id"] is None and codex_row["tokens"] == 900
     claude_row = next(x for x in rows if x["source"] == "claude")
-    assert claude_row["plane_identifier"] == "TIME-4"  # JOIN task для отчёта
+    assert claude_row["identifier"] == "TIME-4"  # JOIN task для отчёта
     r.delete_daily_agent_usage(emp, "2026-06-09")
     assert r.daily_agent_usage(emp, "2026-06-09") == []
     r.close()
