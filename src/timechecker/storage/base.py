@@ -240,6 +240,9 @@ class BaseSqlRepository(Repository):
         return self._fetchone("SELECT * FROM employee WHERE windows_username=?",
                               (windows_username,))
 
+    def get_project(self, slug):
+        return self._fetchone("SELECT * FROM project WHERE slug=?", (slug,))
+
     def task_id_by_identifier(self, plane_identifier):
         v = self._scalar("SELECT id FROM task WHERE plane_identifier=?", (plane_identifier,))
         return int(v) if v is not None else None

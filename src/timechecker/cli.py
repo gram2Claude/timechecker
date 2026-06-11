@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from . import __version__
 from .collectors.hooks import HOOK_EVENTS, append_hook_event
@@ -155,6 +156,37 @@ def _cmd_pricing_refresh(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _cmd_task(args: argparse.Namespace, cfg: Config) -> int:
+    """Собственный реестр задач (E9): запись задач/переходов без Plane."""
+    from .tasks import DONE_STATE, STARTED_STATE, add_task, import_canon, list_tasks, transition
+    repo = open_repository(cfg)
+    try:
+        if args.task_command == "import":
+            res = import_canon(repo, Path(args.plan), slug=args.slug)
+            log.info("task import: %s", json.dumps(res, ensure_ascii=False))
+        elif args.task_command == "add":
+            ident = add_task(repo, args.slug, args.title, estimate_h=args.estimate_h,
+                             canon_id=args.canon_id, prefix=args.prefix)
+            log.info("task add: %s — %s", ident, args.title)
+        elif args.task_command in ("start", "done"):
+            emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)
+            to = STARTED_STATE if args.task_command == "start" else DONE_STATE
+            res = transition(repo, emp, args.identifier, to, at=args.at)
+            log.info("task %s: %s", args.task_command, json.dumps(res, ensure_ascii=False))
+        elif args.task_command == "list":
+            rows = list_tasks(repo, slug=args.slug, open_only=args.open)
+            for t in rows:
+                log.info("%-12s %-12s %s", t.get("plane_identifier"),
+                         t.get("status") or "-", t.get("title") or "")
+            log.info("task list: %s задач", len(rows))
+    except ValueError as e:
+        log.error("task %s: %s", args.task_command, e)
+        return 1
+    finally:
+        repo.close()
+    return 0
+
+
 def _cmd_register_project(args: argparse.Namespace, cfg: Config) -> int:
     projects = register_project(
         cfg.db_path, slug=args.slug, repo_dir=args.repo_dir, branch=args.branch,
@@ -250,6 +282,25 @@ def build_parser() -> argparse.ArgumentParser:
     deploy_p.add_argument("--sync-every", type=int, default=60, help="период sync, минут")
     daily_p = sub.add_parser("daily", help="Дневной прогон: метрики + отчёт за сегодня")
     daily_p.add_argument("--date", default=None, help="YYYY-MM-DD (МСК); по умолчанию сегодня")
+    task_p = sub.add_parser("task", help="Собственный реестр задач: import/add/start/done/list")
+    tsub = task_p.add_subparsers(dest="task_command", required=True)
+    ti = tsub.add_parser("import", help="Импорт канона плана (JSON) в БД; назначает readable-ID")
+    ti.add_argument("--plan", required=True, help="путь к канону 00_<slug>_plan.json")
+    ti.add_argument("--slug", default=None, help="slug проекта (по умолчанию из канона)")
+    ta = tsub.add_parser("add", help="Добавить задачу вне канона (печатает назначенный ID)")
+    ta.add_argument("--slug", required=True)
+    ta.add_argument("--title", required=True)
+    ta.add_argument("--estimate-h", type=float, default=None)
+    ta.add_argument("--canon-id", default=None, help="id задачи в каноне (tX.Y.Z)")
+    ta.add_argument("--prefix", default=None, help="префикс readable-ID (по умолчанию из проекта)")
+    for name, hlp in (("start", "Перевести задачу в работу (In Progress)"),
+                      ("done", "Завершить задачу (Done)")):
+        tp = tsub.add_parser(name, help=hlp)
+        tp.add_argument("identifier", help="readable-ID, напр. TIME-55")
+        tp.add_argument("--at", default=None, help="ISO-время перехода (по умолчанию сейчас)")
+    tl = tsub.add_parser("list", help="Список задач из БД")
+    tl.add_argument("--slug", default=None)
+    tl.add_argument("--open", action="store_true", help="только незавершённые")
     rp = sub.add_parser("register-project", help="Привязать проект к учёту времени (git/Plane)")
     rp.add_argument("--slug", required=True)
     rp.add_argument("--repo-dir", default=None)
@@ -283,6 +334,7 @@ def main(argv: list[str] | None = None) -> int:
         "prune": _cmd_prune,
         "deploy": _cmd_deploy,
         "daily": _cmd_daily,
+        "task": _cmd_task,
         "register-project": _cmd_register_project,
         "projects": _cmd_projects,
         "migrate-db": _cmd_migrate_db,

@@ -104,6 +104,9 @@ class Repository(ABC):
     def get_employee(self, windows_username: str) -> dict | None: ...
 
     @abstractmethod
+    def get_project(self, slug: str) -> dict | None: ...
+
+    @abstractmethod
     def task_id_by_identifier(self, plane_identifier: str) -> int | None: ...
 
     @abstractmethod
