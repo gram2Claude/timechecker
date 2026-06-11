@@ -175,8 +175,15 @@ def test_prune_raw(tmp_path):
     emp = r.upsert_employee("Oleg")
     r.insert_event(emp, "claude", "message", "2026-01-01T00:00:00Z", external_id="old")
     r.insert_event(emp, "claude", "message", "2026-06-09T00:00:00Z", external_id="new")
+    # переходы статусов — первичные данные реестра (E9): prune их НЕ трогает,
+    # даже очень старые — иначе окна атрибуции локально невосстановимы
+    proj = r.upsert_project("p", identifier_prefix="PR")
+    task = r.upsert_task(proj, "PR-1", title="x")
+    r.insert_task_transition(task, from_state="Todo", to_state="In Progress",
+                             ts_utc="2026-01-01T00:00:00Z", external_id="tr-old")
     deleted = r.prune_raw("2026-05-10T00:00:00Z")  # ~30 дней назад от 09.06
     assert deleted >= 1
     evs = r.events_between(emp, "2026-01-01T00:00:00Z", "2026-12-31T00:00:00Z")
     assert len(evs) == 1  # осталось только свежее
+    assert len(r.all_task_transitions()) == 1  # переход старше cutoff пережил prune
     r.close()

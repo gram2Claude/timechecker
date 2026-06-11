@@ -66,6 +66,66 @@ def test_import_canon_idempotent_and_writeback(repo, tmp_path):
     assert res2["created"] == 0 and res2["assigned_ids"] == 0 and res2["tasks"] == 2
 
 
+def test_import_canon_does_not_steal_explicit_ids(repo, tmp_path):
+    """P1 двойного ревью: задача без ID раньше задачи с явным ID не должна занять её ID
+    (иначе upsert молча сливает две задачи в одну и канон получает дубль)."""
+    canon = {
+        "project": {"slug": "demo", "plane_identifier": "DEMO"},
+        "epochs": [{"id": "e1", "sprints": [{"id": "s1", "tasks": [
+            {"id": "t1", "name": "без ID", "status": "todo"},
+            {"id": "t2", "name": "с явным ID", "status": "todo", "plane_identifier": "DEMO-1"},
+        ]}]}],
+    }
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps(canon, ensure_ascii=False), encoding="utf-8")
+    res = import_canon(repo, p)
+    assert res["tasks"] == 2 and res["created"] == 2  # обе живы, ничего не слилось
+    out = json.loads(p.read_text(encoding="utf-8"))
+    t1, t2 = out["epochs"][0]["sprints"][0]["tasks"]
+    assert t2["plane_identifier"] == "DEMO-1"
+    assert t1["plane_identifier"] == "DEMO-2"  # свободный, НЕ занятый DEMO-1
+    assert repo.task_id_by_identifier("DEMO-1") != repo.task_id_by_identifier("DEMO-2")
+
+
+def test_import_canon_keeps_registered_prefix(repo, tmp_path):
+    """Канон без project.plane_identifier не должен перезатирать префикс проекта
+    (иначе ID-пространство раздваивается и коммиты отвязываются от задач)."""
+    repo.upsert_project("demo", identifier_prefix="TIME")
+    canon = {"project": {"slug": "demo"},
+             "epochs": [{"id": "e1", "sprints": [{"id": "s1", "tasks": [
+                 {"id": "t1", "name": "x", "status": "todo"}]}]}]}
+    p = tmp_path / "c.json"
+    p.write_text(json.dumps(canon, ensure_ascii=False), encoding="utf-8")
+    import_canon(repo, p)
+    out = json.loads(p.read_text(encoding="utf-8"))
+    assert out["epochs"][0]["sprints"][0]["tasks"][0]["plane_identifier"] == "TIME-1"
+    assert repo.get_project("demo")["identifier_prefix"] == "TIME"
+
+
+def test_reimport_does_not_reset_live_status(repo, tmp_path):
+    """Ре-импорт канона (штатный replan) не откатывает статусы, которые ведёт реестр."""
+    p = _write_canon(tmp_path)
+    import_canon(repo, p)
+    emp = repo.upsert_employee("oleg")
+    transition(repo, emp, "DEMO-2", STARTED_STATE)
+    import_canon(repo, p)  # в каноне DEMO-2 = todo
+    by_ident = {t["identifier"]: t for t in repo.all_tasks()}
+    assert by_ident["DEMO-2"]["status"] == STARTED_STATE
+
+
+def test_transition_retry_heals_partial_state(repo, tmp_path):
+    """Повтор с тем же --at дозаписывает недостающее: упали между transition и event —
+    ретрай восстанавливает событие, не плодя дублей переходов."""
+    import_canon(repo, _write_canon(tmp_path))
+    emp = repo.upsert_employee("oleg")
+    transition(repo, emp, "DEMO-2", STARTED_STATE, at="2026-06-11T09:00:00Z")
+    repo._exec("DELETE FROM activity_event WHERE source='task'", ())  # имитация частичной записи
+    transition(repo, emp, "DEMO-2", STARTED_STATE, at="2026-06-11T09:00:00Z")
+    assert len(repo.all_task_transitions()) == 1
+    events = repo.events_between(emp, "2026-06-11T00:00:00Z", "2026-06-11T23:59:59Z")
+    assert len([e for e in events if e["source"] == "task"]) == 1
+
+
 def test_add_task_generates_sequence(repo, tmp_path):
     import_canon(repo, _write_canon(tmp_path))
     ident = add_task(repo, "demo", "Новая задача", estimate_h=1.5)
@@ -144,3 +204,5 @@ def test_cli_task_commands_end_to_end(tmp_path, monkeypatch):
     assert main(["task", "list", "--slug", "demo", "--open"]) == 0
     # неизвестная задача → rc=1, не traceback
     assert main(["task", "start", "NOPE-1"]) == 1
+    # несуществующий путь канона → rc=1, не traceback (OSError ловится)
+    assert main(["task", "import", "--plan", str(tmp_path / "nope.json")]) == 1
