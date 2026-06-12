@@ -282,9 +282,32 @@ ALTER TABLE project DROP COLUMN plane_project_id;
 COMMIT;
 """
 
+# v5 (спека 11, misc_works): справочник спринтов канона + привязка задач к спринту.
+# sprint наполняется при `task import` (ord = порядок обхода канона: даты done-спринтов
+# заморожены «в будущем» и для сортировки непригодны; status done/open — из статусов
+# обычных задач канона). task.sprint_ext_id: у плановых задач — спринт канона, у
+# внеплановых (canon_task_id IS NULL) — резолв по дате при `task add` / `task move`.
+_V5 = """
+BEGIN;
+CREATE TABLE sprint (
+  id         INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES project(id),
+  ext_id     TEXT NOT NULL,
+  name       TEXT,
+  ord        INTEGER,
+  status     TEXT,
+  start_date TEXT,
+  end_date   TEXT,
+  UNIQUE(project_id, ext_id)
+);
+ALTER TABLE task ADD COLUMN sprint_ext_id TEXT;
+COMMIT;
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _V1),
     (2, _V2),
     (3, _V3),
     (4, _V4),
+    (5, _V5),
 ]

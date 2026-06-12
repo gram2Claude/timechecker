@@ -32,7 +32,27 @@ class Repository(ABC):
         self, project_id: int, identifier: str, *, external_uid: str | None = None,
         canon_task_id: str | None = None, title: str | None = None,
         estimate_h: float | None = None, status: str | None = None,
+        sprint_ext_id: str | None = None,
     ) -> int: ...
+
+    @abstractmethod
+    def upsert_sprint(
+        self, project_id: int, ext_id: str, *, name: str | None = None,
+        ord_no: int | None = None, status: str | None = None,
+        start_date: str | None = None, end_date: str | None = None,
+    ) -> int: ...
+
+    @abstractmethod
+    def sprints_for_project(self, project_id: int) -> list[dict]: ...
+
+    @abstractmethod
+    def delete_sprints_except(self, project_id: int, keep_ext_ids: list[str]) -> None: ...
+
+    @abstractmethod
+    def set_task_sprint(self, task_id: int, sprint_ext_id: str | None) -> None: ...
+
+    @abstractmethod
+    def tasks_for_sprint_backfill(self, started_state: str) -> list[dict]: ...
 
     # --- прогоны сбора ---
     @abstractmethod

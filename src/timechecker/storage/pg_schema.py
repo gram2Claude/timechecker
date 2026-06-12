@@ -264,9 +264,26 @@ ALTER TABLE project RENAME COLUMN plane_identifier TO identifier_prefix;
 ALTER TABLE project DROP COLUMN plane_project_id;
 """
 
+# v5 (спека 11, misc_works) — зеркало SQLite-v5: справочник спринтов + task.sprint_ext_id.
+_V5 = f"""
+CREATE TABLE sprint (
+  id         {_ID},
+  project_id INTEGER NOT NULL REFERENCES project(id),
+  ext_id     TEXT NOT NULL,
+  name       TEXT,
+  ord        INTEGER,
+  status     TEXT,
+  start_date TEXT,
+  end_date   TEXT,
+  UNIQUE(project_id, ext_id)
+);
+ALTER TABLE task ADD COLUMN sprint_ext_id TEXT;
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _V1),
     (2, _V2),
     (3, _V3),
     (4, _V4),
+    (5, _V5),
 ]

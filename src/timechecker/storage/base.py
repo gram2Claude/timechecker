@@ -135,19 +135,62 @@ class BaseSqlRepository(Repository):
         return self._id("project", "slug=?", (slug,))
 
     def upsert_task(self, project_id, identifier, *, external_uid=None,
-                    canon_task_id=None, title=None, estimate_h=None, status=None):
+                    canon_task_id=None, title=None, estimate_h=None, status=None,
+                    sprint_ext_id=None):
         self._exec(
             "INSERT INTO task(project_id, identifier, external_uid, canon_task_id, "
-            "title, estimate_h, status, updated_at) VALUES(?,?,?,?,?,?,?,?) "
+            "title, estimate_h, status, sprint_ext_id, updated_at) VALUES(?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(identifier) DO UPDATE SET project_id=excluded.project_id, "
             "external_uid=COALESCE(excluded.external_uid, task.external_uid), "
             "canon_task_id=COALESCE(excluded.canon_task_id, task.canon_task_id), "
             "title=COALESCE(excluded.title, task.title), "
             "estimate_h=COALESCE(excluded.estimate_h, task.estimate_h), "
-            "status=COALESCE(excluded.status, task.status), updated_at=excluded.updated_at",
+            "status=COALESCE(excluded.status, task.status), "
+            "sprint_ext_id=COALESCE(excluded.sprint_ext_id, task.sprint_ext_id), "
+            "updated_at=excluded.updated_at",
             (project_id, identifier, external_uid, canon_task_id, title, estimate_h,
-             status, _now()))
+             status, sprint_ext_id, _now()))
         return self._id("task", "identifier=?", (identifier,))
+
+    def upsert_sprint(self, project_id, ext_id, *, name=None, ord_no=None, status=None,
+                      start_date=None, end_date=None):
+        # без COALESCE: справочник — зеркало канона, ре-импорт перетирает всё
+        # (replan двигает даты/статусы, устаревшее значение хуже NULL)
+        self._exec(
+            "INSERT INTO sprint(project_id, ext_id, name, ord, status, start_date, end_date) "
+            "VALUES(?,?,?,?,?,?,?) ON CONFLICT(project_id, ext_id) DO UPDATE SET "
+            "name=excluded.name, ord=excluded.ord, status=excluded.status, "
+            "start_date=excluded.start_date, end_date=excluded.end_date",
+            (project_id, ext_id, name, ord_no, status, start_date, end_date))
+        return self._id("sprint", "project_id=? AND ext_id=?", (project_id, ext_id))
+
+    def sprints_for_project(self, project_id):
+        return self._query("SELECT * FROM sprint WHERE project_id=? ORDER BY ord", (project_id,))
+
+    def delete_sprints_except(self, project_id, keep_ext_ids):
+        """Зачистка справочника при ре-импорте: спринт, исчезнувший из канона (replan),
+        не должен участвовать в резолве «Прочих работ» (ревью кода). FK на sprint нет."""
+        keep = list(keep_ext_ids)
+        if not keep:
+            self._exec("DELETE FROM sprint WHERE project_id=?", (project_id,))
+            return
+        ph = ",".join(["?"] * len(keep))
+        self._exec(f"DELETE FROM sprint WHERE project_id=? AND ext_id NOT IN ({ph})",
+                   (project_id, *keep))
+
+    def set_task_sprint(self, task_id, sprint_ext_id):
+        # прямой UPDATE: COALESCE-семантика upsert_task не умеет менять/чистить поле
+        self._exec("UPDATE task SET sprint_ext_id=?, updated_at=? WHERE id=?",
+                   (sprint_ext_id, _now(), task_id))
+
+    def tasks_for_sprint_backfill(self, started_state):
+        """Внеплановые задачи без привязки + дата первого перехода в работу (для backfill)."""
+        return self._query(
+            "SELECT t.id, t.project_id, t.updated_at, "
+            "(SELECT MIN(tr.ts_utc) FROM task_transition tr "
+            " WHERE tr.task_id=t.id AND tr.to_state=?) AS first_started "
+            "FROM task t WHERE t.canon_task_id IS NULL AND t.sprint_ext_id IS NULL "
+            "AND t.identifier IS NOT NULL", (started_state,))
 
     # ---- прогоны сбора ----
     def start_ingest_run(self, employee_id, *, window_from=None, window_to=None, sources=None):

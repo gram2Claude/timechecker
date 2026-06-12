@@ -4,4 +4,4 @@
 собственный реестр задач (CLI `timechecker task`). Пилот — Windows-сервер (RDP).
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
