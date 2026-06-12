@@ -148,28 +148,52 @@ def _cmd_pricing_refresh(args: argparse.Namespace, cfg: Config) -> int:
 
 def _cmd_task(args: argparse.Namespace, cfg: Config) -> int:
     """Собственный реестр задач (E9): запись задач/переходов без Plane."""
-    from .tasks import DONE_STATE, STARTED_STATE, add_task, import_canon, list_tasks, transition
+    from .tasks import (
+        DONE_STATE,
+        STARTED_STATE,
+        add_task,
+        backfill_sprints,
+        import_canon,
+        list_tasks,
+        move_task,
+        transition,
+    )
     repo = open_repository(cfg)
     try:
         if args.task_command == "import":
             res = import_canon(repo, Path(args.plan), slug=args.slug)
-            log.info("task import: %s", json.dumps(res, ensure_ascii=False))
+            for w in res.get("warnings", []):
+                log.warning("task import: %s", w)
+            log.info("task import: %s", json.dumps(
+                {k: v for k, v in res.items() if k != "warnings"}, ensure_ascii=False))
         elif args.task_command == "add":
             ident = add_task(repo, args.slug, args.title, estimate_h=args.estimate_h,
-                             canon_id=args.canon_id, prefix=args.prefix)
-            log.info("task add: %s — %s", ident, args.title)
+                             prefix=args.prefix, sprint=args.sprint)
+            task = next((t for t in repo.all_tasks() if t.get("identifier") == ident), {})
+            sp = task.get("sprint_ext_id")
+            log.info("task add: %s — %s → прочие работы %s", ident, args.title,
+                     sp or "(вне спринтов — канон не импортирован)")
         elif args.task_command in ("start", "done"):
             emp = repo.upsert_employee(cfg.employee_username, dev_branch=cfg.dev_branch)
             to = STARTED_STATE if args.task_command == "start" else DONE_STATE
             res = transition(repo, emp, args.identifier, to, at=args.at)
             log.info("task %s: %s", args.task_command, json.dumps(res, ensure_ascii=False))
+        elif args.task_command == "move":
+            res = move_task(repo, args.identifier, args.sprint)
+            log.info("task move: %s → %s", res["identifier"], res["sprint_ext_id"])
+        elif args.task_command == "backfill-sprints":
+            res = backfill_sprints(repo, slug=args.slug)
+            log.info("task backfill-sprints: %s", json.dumps(res, ensure_ascii=False))
         elif args.task_command == "list":
             rows = list_tasks(repo, slug=args.slug, open_only=args.open)
             for t in rows:
-                log.info("%-12s %-12s %s", t.get("identifier"),
-                         t.get("status") or "-", t.get("title") or "")
+                misc = "" if t.get("canon_task_id") else " [прочие]"
+                log.info("%-12s %-12s %-9s %s%s", t.get("identifier"),
+                         t.get("status") or "-", t.get("sprint_ext_id") or "-",
+                         t.get("title") or "", misc)
             log.info("task list: %s задач", len(rows))
-    except (ValueError, OSError) as e:  # OSError: нет файла канона/нет прав — rc=1, не traceback
+    except (ValueError, OSError,  # OSError: нет файла канона/нет прав — rc=1, не traceback
+            TypeError, KeyError, AttributeError) as e:  # битый по форме канон (security-ревью)
         log.error("task %s: %s", args.task_command, e)
         return 1
     finally:
@@ -281,16 +305,23 @@ def build_parser() -> argparse.ArgumentParser:
     ta.add_argument("--slug", required=True)
     ta.add_argument("--title", required=True)
     ta.add_argument("--estimate-h", type=float, default=None)
-    ta.add_argument("--canon-id", default=None, help="id задачи в каноне (tX.Y.Z)")
     ta.add_argument("--prefix", default=None, help="префикс readable-ID (по умолчанию из проекта)")
+    ta.add_argument("--sprint", default=None,
+                    help="спринт «Прочих работ» (sX.Y); по умолчанию резолв по дате")
     for name, hlp in (("start", "Перевести задачу в работу (In Progress)"),
                       ("done", "Завершить задачу (Done)")):
         tp = tsub.add_parser(name, help=hlp)
         tp.add_argument("identifier", help="readable-ID, напр. TIME-55")
         tp.add_argument("--at", default=None, help="ISO-время перехода (по умолчанию сейчас)")
+    tm = tsub.add_parser("move", help="Перепривязать внеплановую задачу к другому спринту")
+    tm.add_argument("identifier", help="readable-ID, напр. TIME-67")
+    tm.add_argument("--sprint", required=True, help="целевой спринт (sX.Y)")
     tl = tsub.add_parser("list", help="Список задач из БД")
     tl.add_argument("--slug", default=None)
     tl.add_argument("--open", action="store_true", help="только незавершённые")
+    tb = tsub.add_parser("backfill-sprints",
+                         help="Бэкфилл sprint_ext_id у внеплановых задач (одноразово)")
+    tb.add_argument("--slug", default=None)
     rp = sub.add_parser("register-project", help="Привязать проект к учёту времени (git + задачи)")
     rp.add_argument("--slug", required=True)
     rp.add_argument("--repo-dir", default=None)
