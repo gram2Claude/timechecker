@@ -17,9 +17,14 @@
 
 1. **Глобально установить агент** (на PATH, с драйвером Postgres для sync):
    ```powershell
-   uv tool install --force --editable "C:\Users\Oleg\dev\timechecker" --with "psycopg[binary]"
+   cd C:\Users\Oleg\dev\timechecker
+   uv tool install --force ".[pg]"
    uv tool update-shell    # добавить ~/.local/bin в PATH (если ещё нет)
    ```
+   С 2026-06-12 (v0.4.0) установка **НЕ editable**: правки дев-клона не попадают в прод до явной
+   переустановки — класс рисков «горячего прода» (scheduled collect применяет недописанную
+   миграцию) закрыт; после каждого мержа в master повторяй команду установки. Extra `[pg]`
+   обязателен — без него `sync` падает на отсутствующем psycopg.
    Backend по умолчанию — **SQLite**; флаг `TIMECHECKER_BACKEND` НЕ ставим. DSN Supabase для sync —
    в `~/.wgp/secrets.json` (`supabase_db_url`), читается отдельно (`cfg.supabase_dsn()`).
 2. **Схема + расписание:**
@@ -41,7 +46,11 @@
 При `/workflow_create_env` шаг 2.7 спрашивает про учёт времени; на «Да» выполняется
 `timechecker register-project --slug … --repo-dir … --branch … --prefix <IDENT>`.
 Задачи проекта публикуются в собственный реестр: `timechecker task import --plan <канон>`
-(фаза publish воркфлоу) либо `timechecker task add`. Дальше **ничего делать не нужно**:
+(фаза publish воркфлоу; попутно наполняет справочник спринтов) либо `timechecker task add` —
+внеплановая задача автоматически попадает в **«Прочие работы»** текущего спринта (явный выбор —
+`--sprint sX.Y`, коррекция — `task move`; в кабинете nexus_admin это узел внутри спринта).
+После replan/изменения канона повторяй `task import` — он обновит справочник спринтов и
+переведёт в плановые задачи, внесённые в канон задним числом. Дальше **ничего делать не нужно**:
 ежечасный `collect` подхватит git-коммиты проекта в SQLite, Claude собирается глобально,
 `sync` доносит в Supabase, дневной отчёт — в 23:50.
 
@@ -111,8 +120,9 @@ source; `task_id NULL` = не атрибутировано), сессии все
 
 ### Миграция на v3 (выполнено 2026-06-10) и откат
 1. Отключить Task Scheduler (`schtasks /Change /TN timechecker-* /DISABLE`) ДО обновления кода:
-   editable-инсталл делает рабочую копию «горячим продом» — scheduled collect применил бы
-   миграцию неконтролируемо.
+   editable-инсталл (использовался до v0.4.0) делал рабочую копию «горячим продом» — scheduled
+   collect применил бы миграцию неконтролируемо. (С v0.4.0 инсталл не-editable, и этот шаг
+   нужен только на время самой переустановки тула.)
 2. Бэкап `timechecker.db` → `.bak-v2-<дата>`. Supabase до локальной проверки НЕ синкать
    (остаётся v2 = второй бэкап агрегатов).
 3. `initdb` (v3: пересоздание agent_session, бэкфилл daily_agent_usage, дроп claude_*-колонок) →
