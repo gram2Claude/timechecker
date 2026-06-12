@@ -35,3 +35,11 @@
 ## Глубже
 - Эксплуатация / боевой режим / backend / `sync` — `docs/RUNBOOK.md`.
 - Обзор и команды — `README.md`. Модель данных/метрики — `work_directory/01_specs/`.
+
+## Учёт работ: план и «Прочие работы» (timechecker)
+
+Любая работа должна существовать в реестре задач timechecker — иначе её не видно ни в план-факте, ни в кабинете nexus_admin (урок 12.06.2026: пласт внеплановых работ amo_looker не попал в учёт).
+
+- **Появился новый план/спека с объёмом работ** → задачи добавляются в канон глобального плана (`work_directory/00_global_plan/00_timechecker_plan.json`) через скилл /workflow_global_plan (режим replan), затем `timechecker task import`. Спека без задач в каноне — не план.
+- **Работа вне плана** → ПЕРЕД началом: `timechecker task add --slug timechecker --title "…" --estimate-h N` (печатает ID, спринт прицепится по дате) → `timechecker task start <ID>` → по завершении `timechecker task done <ID>`. Задача появится в узле «Прочие работы» спринта в кабинете.
+- ID в коммитах — только выданные реестром (`task add`/`task list`), руками не сочинять: коллизия TIME-N с реестром уже случалась (NEXADM-36/37).
