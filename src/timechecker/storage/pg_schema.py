@@ -280,10 +280,63 @@ CREATE TABLE sprint (
 ALTER TABLE task ADD COLUMN sprint_ext_id TEXT;
 """
 
+# v6 (спека 12, E11 tg_assistant): выделенная схема обмена «бот-конспектор ↔ кабинет» — 4 таблицы
+# СТРОГО по DDL §2 контракта TGA-26 (tg_chat_assistant/01_specs/02_tga26_cabinet_contract_spec.md).
+# Единственное согласованное отступление от черновика контракта (спека 12 §3, решение 6.2):
+# tg_chat_bindings.project_slug — NULLABLE (контракт давал NOT NULL). Привязка чата = заполнение
+# slug; непривязанный чат = NULL → раздел «Чаты» кабинета показывает «неприсвоенные», unbind =
+# project_slug=NULL. NULLABLE — надмножество NOT NULL: запись бота (всегда со slug) не ломается;
+# бот-сторона уведомляется в issue #1 (TIME-71), чтобы научиться слать непривязанные чаты.
+#
+# ВАЖНО (отличия от миграций v1–v5):
+#  • IF NOT EXISTS везде: схема tg_assistant — ГЛОБАЛЬНАЯ (создаётся вне search_path), а PG-тест
+#    гоняет миграции в search_path=timechecker_test → один физический tg_assistant обслуживает два
+#    леджера schema_migrations; без IF NOT EXISTS второй прогон упадёт (ревью плана #3).
+#  • Роль бота tg_assistant_bot и гранты — НЕ в миграции (отдельный CLI `setup-bot-role`):
+#    _executescript режет скрипт по «;», role-DDL и условные блоки этого не переживут (ревью #2).
+#  • tg_journal.id — bigserial (как в контракте): создаёт sequence tg_journal_id_seq, на который
+#    роли бота выдаётся USAGE,SELECT — иначе INSERT упадёт на nextval (ревью #1).
+# В этом скрипте НЕТ «;» внутри литералов/блоков — _executescript режет по «;» корректно.
+_V6 = """
+CREATE SCHEMA IF NOT EXISTS tg_assistant;
+CREATE TABLE IF NOT EXISTS tg_assistant.tg_chat_bindings (
+  chat_id      bigint PRIMARY KEY,
+  project_slug text,
+  chat_title   text NOT NULL DEFAULT '',
+  bound_via    text NOT NULL CHECK (bound_via IN ('cabinet','bot')),
+  active       boolean NOT NULL DEFAULT true,
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS tg_assistant.tg_digests (
+  project_slug text NOT NULL,
+  date         date NOT NULL,
+  content_md   text NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (project_slug, date)
+);
+CREATE TABLE IF NOT EXISTS tg_assistant.tg_topics (
+  project_slug text NOT NULL,
+  name         text NOT NULL,
+  content_md   text NOT NULL,
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (project_slug, name)
+);
+CREATE TABLE IF NOT EXISTS tg_assistant.tg_journal (
+  id           bigserial PRIMARY KEY,
+  project_slug text NOT NULL,
+  kind         text NOT NULL CHECK (kind IN ('decision','wish')),
+  date         date NOT NULL,
+  text         text NOT NULL,
+  norm_text    text NOT NULL,
+  UNIQUE (project_slug, kind, norm_text)
+);
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _V1),
     (2, _V2),
     (3, _V3),
     (4, _V4),
     (5, _V5),
+    (6, _V6),
 ]
