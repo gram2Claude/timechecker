@@ -96,6 +96,88 @@ Repository-интерфейс (`storage/`) изолирует СУБД (SQLite/P
 > консистентны). Доступ к Supabase ограничь (RLS/роли); DSN с паролем — только в `~/.wgp/secrets.json`.
 > `migrate-db` — для разового полного копирования; `sync` — для регулярной инкрементальной репликации.
 
+## Интеграция TG Chat Assistant (схема `tg_assistant`, v6)
+
+С миграции **v6** (спека 12, эпоха E11) на Supabase проекта появляется выделенная схема
+`tg_assistant` — **точка обмена** между ботом-конспектором TG-чатов (проект `tg_chat_assistant`)
+и личным кабинетом (`nexus_admin`). DDL — строго по разделу 2 контракта TGA-26. Схема живёт
+**только в Postgres/Supabase** (в локальном SQLite миграция v6 — no-op: учёт времени её не
+использует). 4 таблицы:
+
+| Таблица | Направление | Назначение |
+|---|---|---|
+| `tg_chat_bindings` | кабинет ПИШЕТ, бот ЧИТАЕТ (poll ≤5 мин) | привязки чат→проект; `project_slug` **NULLABLE** (непривязанный чат = NULL → раздел «Чаты» показывает «неприсвоенные»; unbind = `project_slug=NULL`) |
+| `tg_digests` | бот ПИШЕТ, кабинет ЧИТАЕТ | ежедневные дайджесты (md), PK `(project_slug, date)` |
+| `tg_topics` | бот ПИШЕТ (полная замена страницы) | темы (md), PK `(project_slug, name)` |
+| `tg_journal` | бот ПИШЕТ (append-only) | решения/пожелания; `id bigserial`, дедуп `UNIQUE(project_slug, kind, norm_text)` |
+
+> **Отступление от черновика контракта** (согласовано, решение 6.2): `project_slug` в
+> `tg_chat_bindings` — NULLABLE (контракт давал NOT NULL). NULLABLE — надмножество, запись бота
+> (всегда со slug) не ломается; зато кабинет/бот могут показывать непривязанные чаты. Бот-сторона
+> уведомлена в issue #1 (нужно уметь слать чаты с `project_slug=NULL`).
+
+### Роль бота `tg_assistant_bot` (least-privilege)
+Бот ходит в Supabase **отдельной** Postgres-ролью с доступом ТОЛЬКО к схеме `tg_assistant`.
+Роль создаётся **не миграцией**, а идемпотентной командой (role-DDL не переживает разбиения
+`_executescript` по «;»). По-табличные гранты (минимально необходимые по протоколу §3):
+
+| Объект | Гранты | Почему |
+|---|---|---|
+| `tg_chat_bindings` | SELECT, INSERT, UPDATE | `fetch_bindings` (SELECT) + `push_binding` upsert |
+| `tg_digests` | SELECT, INSERT, UPDATE | `upsert_digest` (ON CONFLICT DO UPDATE) |
+| `tg_topics` | SELECT, INSERT, UPDATE | `replace_topic` (ON CONFLICT DO UPDATE) |
+| `tg_journal` | SELECT, INSERT | `add_journal` — append-only (ON CONFLICT DO NOTHING) |
+| `SEQUENCE tg_journal_id_seq` | USAGE, SELECT | иначе INSERT падает на `nextval` (`id bigserial`) |
+| схема `tg_assistant` | USAGE | граница: `public` и прочие схемы — без гранта вовсе |
+
+> **SELECT обязателен на ВСЕХ таблицах** — выявлено приёмкой TIME-70 эмпирически: `INSERT …
+> ON CONFLICT` (и DO UPDATE, и DO NOTHING) требует SELECT на таблицу (арбитр конфликта читает
+> строку), иначе бот-upsert падает с `42501 permission denied for table`. **Спека 12 §2 (digests
+> I/U, journal I — без SELECT) была недостаточна** — исправлено. SELECT здесь техническое
+> требование ON CONFLICT, не «бот читает чужое»: `tg_assistant` — схема самого бота.
+>
+> Гранты **авторитетные**: `setup-bot-role` сперва снимает всё ранее выданное роли (в
+> `tg_assistant` и `public`), затем выдаёт ровно набор выше — ре-ран/ротация не оставляют лишних
+> прав. **DELETE не выдаётся нигде** (бот «заменяет страницу» per-row upsert'ом, а не delete-
+> replace — отступление от спеки §2/ревью #7); **UPDATE на `tg_journal` нет** (append-only). Если
+> бот добавит чистку осиротевших тем через DELETE — дописать его в `TABLE_GRANTS` и повторить
+> `setup-bot-role`.
+
+Провижининг (одноразово, после мержа v6 в master и переустановки тула):
+```powershell
+# 1) применить миграцию v6 на Supabase (создаёт схему + 4 таблицы)
+$env:TIMECHECKER_BACKEND="postgres"; timechecker initdb; Remove-Item Env:TIMECHECKER_BACKEND
+# 2) создать роль + гранты + приёмка + выдать DSN (пароль НЕ в репозитории/SQL — только в env)
+$env:TG_ASSISTANT_BOT_PASSWORD="<32+ символов [A-Za-z0-9]>"
+timechecker setup-bot-role --print-dsn
+Remove-Item Env:TG_ASSISTANT_BOT_PASSWORD
+```
+`setup-bot-role` идемпотентна (повторный запуск = ротация пароля + до-выдача грантов; роль и
+гранты применяются одной транзакцией). С `--print-dsn` печатает в **stdout** DSN роли
+(с паролем) — это и есть креды для бота; в логи DSN не попадает. Без `--no-verify` сразу гоняет
+**приёмку реальным логином роли** через pooler: позитив (чтение/запись разрешённого, всё с
+rollback — мусора в схеме не остаётся) + негатив (`public.task`, чтение/DELETE `tg_digests`, DDL
+— ждём отказ `42501`).
+
+### DSN для бота
+Тот же Supabase-инстанс, что у timechecker; **transaction-pooler** (порт 6543, `sslmode=require`),
+username `tg_assistant_bot.<project_ref>`:
+```
+postgresql://tg_assistant_bot.<project_ref>:<pwd>@aws-...pooler.supabase.com:6543/postgres?sslmode=require
+```
+Бот ходит через **asyncpg** — для transaction-pooler на стороне бота обязателен
+`statement_cache_size=0` (prepared statements несовместимы с pgbouncer). Кладётся боту в `.env`
+(`CABINET_DB_URL`). Service-role ключ Supabase боту НЕ выдаётся.
+
+### Ретенция дайджестов
+**Хранить всё, без чистки** (решение §6.3): объём ничтожен (1 md-строка/проект/день), Vault бота
+и так хранит всё; точечную чистку можно добавить в `prune` позже при необходимости.
+
+### Гранты кабинетной роли (`nexus_admin_app`)
+Чтение/привязка из кабинета — отдельная роль, её гранты на `tg_assistant` живут на стороне
+кабинета (`nexus_admin/scripts/db/setup-app-role.mjs`): один владелец грантов у каждой роли, без
+второго источника истины.
+
 ## Мультиагентный учёт (v3, схема `agent_session` + `daily_agent_usage`)
 
 С миграции v3 timechecker учитывает расход **нескольких ИИ-агентов**: Claude Code и

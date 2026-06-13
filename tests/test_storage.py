@@ -20,10 +20,10 @@ def test_quote_ident():
 
 def test_migrations_idempotent(tmp_path):
     conn = init_db(tmp_path / "t.db")
-    assert current_version(conn) == 5
+    assert current_version(conn) == 6
     # повторное применение — без ошибок, версия не меняется
-    assert apply_migrations(conn) == 5
-    assert current_version(conn) == 5
+    assert apply_migrations(conn) == 6
+    assert current_version(conn) == 6
     conn.close()
 
 
@@ -67,7 +67,7 @@ def test_migration_upgrade_with_data(tmp_path):
         "claude_cost_usd, computed_at) VALUES(1, '2026-06-08', 10, 3000, 0.5, ?)", (now,))
     conn.commit()
 
-    assert apply_migrations(conn) == 5
+    assert apply_migrations(conn) == 6  # v5 (sprint) + v6 (tg_assistant no-op в SQLite)
 
     # v4: переименования вступили в силу (без потери данных)
     t = conn.execute("SELECT identifier FROM task WHERE id=7").fetchone()

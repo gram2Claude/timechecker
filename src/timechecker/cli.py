@@ -252,6 +252,50 @@ def _cmd_sync(args: argparse.Namespace, cfg: Config) -> int:
     return 0
 
 
+def _cmd_setup_bot_role(args: argparse.Namespace, cfg: Config) -> int:
+    """E11 (TIME-69/70): создать/обновить роль tg_assistant_bot + по-табличные гранты на схему
+    tg_assistant и прогнать приёмочные пробы. Пароль — из env (по умолчанию
+    TG_ASSISTANT_BOT_PASSWORD). DSN роли печатается в stdout (--print-dsn) — это секрет."""
+    admin_dsn = cfg.supabase_dsn()
+    if not admin_dsn:
+        log.error("setup-bot-role: нет Supabase DSN "
+                  "(supabase_db_url в secrets / TIMECHECKER_DB_URL)")
+        return 1
+    password = os.environ.get(args.password_env)
+    if not password:
+        log.error("setup-bot-role: пароль роли не задан — положи в env %s "
+                  "(минимум 24 символа [A-Za-z0-9])", args.password_env)
+        return 1
+    from .storage.tg_assistant import build_bot_dsn, setup_bot_role, verify_bot_role
+    try:
+        summary = setup_bot_role(admin_dsn, password)
+    except ValueError as e:
+        log.error("setup-bot-role: %s", e)
+        return 1
+    log.info("setup-bot-role: роль %s готова; гранты %s; sequence %s",
+             summary["role"], json.dumps(summary["grants"], ensure_ascii=False),
+             summary["sequence"])
+    bot_dsn = build_bot_dsn(admin_dsn, password)
+    rc = 0
+    if not args.no_verify:
+        res = verify_bot_role(bot_dsn)
+        for p in res["positive"]:
+            log.info("  позитив %-32s %s", p["probe"],
+                     "ok" if p["ok"] else f"FAIL {p.get('code')}")
+        for n in res["negative"]:
+            log.info("  негатив %-32s %s", n["probe"],
+                     "denied(42501)" if n["denied"] else f"НЕ ОТКЛОНЕНО {n.get('code')}")
+        if res["ok"]:
+            log.info("setup-bot-role: приёмка пройдена (позитив ok, негатив 42501)")
+        else:
+            log.error("setup-bot-role: ПРИЁМКА НЕ ПРОЙДЕНА — утечки/нештатно: %s", res["leaks"])
+            rc = 1
+    # DSN роли — секрет: печатаем в stdout (а не через логгер), чтобы не утёк в json-логи/файлы
+    if args.print_dsn:
+        print(bot_dsn)
+    return rc
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="timechecker",
@@ -333,6 +377,15 @@ def build_parser() -> argparse.ArgumentParser:
     sync_p.add_argument("--full", action="store_true", help="полная репликация (все строки)")
     sync_p.add_argument("--reset", action="store_true", help="TRUNCATE Supabase + ресед")
     sub.add_parser("pricing-refresh", help="Обновить ставки токенов из LiteLLM")
+    sbr = sub.add_parser(
+        "setup-bot-role",
+        help="E11: роль tg_assistant_bot + гранты на схему tg_assistant + приёмка (Supabase)")
+    sbr.add_argument("--password-env", default="TG_ASSISTANT_BOT_PASSWORD",
+                     help="env-переменная с паролем роли (по умолчанию TG_ASSISTANT_BOT_PASSWORD)")
+    sbr.add_argument("--no-verify", action="store_true",
+                     help="не запускать приёмочные пробы (только создать роль и гранты)")
+    sbr.add_argument("--print-dsn", action="store_true",
+                     help="напечатать DSN роли (с паролем!) в stdout для передачи боту")
     return p
 
 
@@ -360,6 +413,7 @@ def main(argv: list[str] | None = None) -> int:
         "migrate-db": _cmd_migrate_db,
         "sync": _cmd_sync,
         "pricing-refresh": _cmd_pricing_refresh,
+        "setup-bot-role": _cmd_setup_bot_role,
     }
     return handlers[args.command](args, cfg)
 

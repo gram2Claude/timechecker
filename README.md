@@ -42,6 +42,7 @@ uv sync
 | `timechecker sync [--full] [--reset]` | инкрементальная репликация SQLite → Supabase (local-first) |
 | `timechecker pricing-refresh` | обновить ставки токенов из LiteLLM → `~/.wgp/pricing.json` |
 | `timechecker register-project --slug … --repo-dir … [--prefix ID]` | привязать проект к учёту (git + задачи) |
+| `timechecker setup-bot-role [--print-dsn]` | E11: роль `tg_assistant_bot` + гранты на схему `tg_assistant` + приёмка (Supabase) |
 | `timechecker schedule` / `hook` / `projects` | примитивы планировщика / хуков / список проектов |
 
 ## Конфигурация (env `TIMECHECKER_*`)

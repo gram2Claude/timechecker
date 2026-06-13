@@ -304,10 +304,20 @@ ALTER TABLE task ADD COLUMN sprint_ext_id TEXT;
 COMMIT;
 """
 
+# v6 (спека 12, E11 tg_assistant): схема обмена «бот-конспектор ↔ кабинет» (tg_chat_bindings/
+# tg_digests/tg_topics/tg_journal) живёт ТОЛЬКО в Postgres/Supabase — это точка встречи бота и
+# кабинета. Локальный SQLite — источник правды учёта времени, схема обмена в нём не нужна:
+# миграция здесь no-op, лишь поднимает версию леджера до 6 (зеркальность пары schema/pg_schema;
+# реальный DDL — в pg_schema._V6).
+_V6 = """
+-- tg_assistant: только Postgres/Supabase (см. pg_schema._V6); в SQLite — no-op.
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _V1),
     (2, _V2),
     (3, _V3),
     (4, _V4),
     (5, _V5),
+    (6, _V6),
 ]
