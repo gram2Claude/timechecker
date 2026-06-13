@@ -43,8 +43,8 @@ def test_postgres_repository_roundtrip():
     repo = PostgresRepository(conn)
     try:
         repo.apply_migrations()
-        assert repo.schema_version() == 6
-        assert repo.apply_migrations() == 6  # идемпотентно
+        assert repo.schema_version() == 7
+        assert repo.apply_migrations() == 7  # идемпотентно
 
         emp = repo.upsert_employee("Oleg", dev_branch="oleg")
         assert repo.upsert_employee("Oleg", display_name="O") == emp  # без дубля
