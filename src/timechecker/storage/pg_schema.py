@@ -296,6 +296,10 @@ ALTER TABLE task ADD COLUMN sprint_ext_id TEXT;
 #    _executescript режет скрипт по «;», role-DDL и условные блоки этого не переживут (ревью #2).
 #  • tg_journal.id — bigserial (как в контракте): создаёт sequence tg_journal_id_seq, на который
 #    роли бота выдаётся USAGE,SELECT — иначе INSERT упадёт на nextval (ревью #1).
+#  • ALTER … DROP NOT NULL: самоисцеление констрейнта — если tg_chat_bindings уже была создана
+#    с project_slug NOT NULL (черновик контракта / DDL бота, прогнанный в эту схему), один лишь
+#    CREATE TABLE IF NOT EXISTS не снимет NOT NULL, и unbind (project_slug=NULL) упадёт (ревью
+#    codex). DROP NOT NULL на уже-nullable колонке — no-op, поэтому идемпотентно.
 # В этом скрипте НЕТ «;» внутри литералов/блоков — _executescript режет по «;» корректно.
 _V6 = """
 CREATE SCHEMA IF NOT EXISTS tg_assistant;
@@ -307,6 +311,7 @@ CREATE TABLE IF NOT EXISTS tg_assistant.tg_chat_bindings (
   active       boolean NOT NULL DEFAULT true,
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE tg_assistant.tg_chat_bindings ALTER COLUMN project_slug DROP NOT NULL;
 CREATE TABLE IF NOT EXISTS tg_assistant.tg_digests (
   project_slug text NOT NULL,
   date         date NOT NULL,
