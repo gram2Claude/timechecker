@@ -136,7 +136,7 @@ def test_v6_tg_assistant_schema_created():
     repo = PostgresRepository(conn)
     try:
         repo.apply_migrations()
-        assert repo.schema_version() == 6
+        assert repo.schema_version() == 7
 
         tables = {r["table_name"] for r in repo._query(
             "SELECT table_name FROM information_schema.tables WHERE table_schema = %s",
@@ -156,6 +156,14 @@ def test_v6_tg_assistant_schema_created():
             "AND table_name = %s AND column_name = %s",
             ("tg_assistant", "tg_journal", "id"))
         assert col["column_default"] and "tg_journal_id_seq" in col["column_default"]
+
+        # v7 (TIME-80): CHECK-лимиты длины контента навешены
+        checks = {r["conname"] for r in repo._query(
+            "SELECT con.conname FROM pg_constraint con "
+            "JOIN pg_namespace n ON n.oid = con.connamespace "
+            "WHERE n.nspname = %s AND con.contype = 'c'", ("tg_assistant",))}
+        assert {"ck_tg_digests_content_md_len", "ck_tg_topics_content_md_len",
+                "ck_tg_journal_text_len", "ck_tg_chat_bindings_title_len"} <= checks
     finally:
         conn.execute("DROP SCHEMA IF EXISTS timechecker_test CASCADE")
         conn.commit()

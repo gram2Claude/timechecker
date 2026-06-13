@@ -337,6 +337,34 @@ CREATE TABLE IF NOT EXISTS tg_assistant.tg_journal (
 );
 """
 
+# v7 (спека 12, TIME-80, security-аудит Medium): CHECK-лимиты длины контента tg_assistant —
+# защита от раздувания (скомпрометированный/багнутый бот пишет мегабайты → раздел «Чаты» грузит
+# CPU/память кабинета и браузера). Лимиты ЩЕДРЫЕ (текущий боевой максимум: digest 1.6K, journal
+# 129) — легитимный контент бота не задевают, мегабайтное злоупотребление режут. Бот уведомляется
+# в issue #1 (контент сверх лимита будет отклонён 23514 — бот должен усекать).
+#  • Идемпотентно: DROP CONSTRAINT IF EXISTS + ADD (re-run/двойной леджер PG-теста на одной
+#    глобальной схеме — как v6). НЕТ DO-блоков и «;» внутри выражений — _executescript режет по «;».
+_V7 = """
+ALTER TABLE tg_assistant.tg_digests DROP CONSTRAINT IF EXISTS ck_tg_digests_content_md_len;
+ALTER TABLE tg_assistant.tg_digests ADD CONSTRAINT ck_tg_digests_content_md_len
+  CHECK (char_length(content_md) <= 65536);
+ALTER TABLE tg_assistant.tg_topics DROP CONSTRAINT IF EXISTS ck_tg_topics_name_len;
+ALTER TABLE tg_assistant.tg_topics ADD CONSTRAINT ck_tg_topics_name_len
+  CHECK (char_length(name) <= 200);
+ALTER TABLE tg_assistant.tg_topics DROP CONSTRAINT IF EXISTS ck_tg_topics_content_md_len;
+ALTER TABLE tg_assistant.tg_topics ADD CONSTRAINT ck_tg_topics_content_md_len
+  CHECK (char_length(content_md) <= 65536);
+ALTER TABLE tg_assistant.tg_journal DROP CONSTRAINT IF EXISTS ck_tg_journal_text_len;
+ALTER TABLE tg_assistant.tg_journal ADD CONSTRAINT ck_tg_journal_text_len
+  CHECK (char_length(text) <= 8192);
+ALTER TABLE tg_assistant.tg_journal DROP CONSTRAINT IF EXISTS ck_tg_journal_norm_text_len;
+ALTER TABLE tg_assistant.tg_journal ADD CONSTRAINT ck_tg_journal_norm_text_len
+  CHECK (char_length(norm_text) <= 8192);
+ALTER TABLE tg_assistant.tg_chat_bindings DROP CONSTRAINT IF EXISTS ck_tg_chat_bindings_title_len;
+ALTER TABLE tg_assistant.tg_chat_bindings ADD CONSTRAINT ck_tg_chat_bindings_title_len
+  CHECK (char_length(chat_title) <= 256);
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _V1),
     (2, _V2),
@@ -344,4 +372,5 @@ MIGRATIONS: list[tuple[int, str]] = [
     (4, _V4),
     (5, _V5),
     (6, _V6),
+    (7, _V7),
 ]

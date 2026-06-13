@@ -313,6 +313,13 @@ _V6 = """
 -- tg_assistant: только Postgres/Supabase (см. pg_schema._V6); в SQLite — no-op.
 """
 
+# v7 (спека 12, TIME-80, security-аудит): CHECK-лимиты длины контента схемы tg_assistant —
+# защита от раздувания (бот пишет мегабайты → тяжёлый рендер раздела «Чаты»). Только
+# Postgres/Supabase (схема обмена); в SQLite — no-op (зеркальность пары schema/pg_schema).
+_V7 = """
+-- tg_assistant CHECK-лимиты длины — только Postgres/Supabase (см. pg_schema._V7); в SQLite no-op.
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _V1),
     (2, _V2),
@@ -320,4 +327,5 @@ MIGRATIONS: list[tuple[int, str]] = [
     (4, _V4),
     (5, _V5),
     (6, _V6),
+    (7, _V7),
 ]
