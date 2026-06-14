@@ -106,7 +106,12 @@ class Config:
             return {}
 
     def supabase_dsn(self) -> str | None:
-        """DSN Supabase для sync — независимо от default-backend (env или secrets)."""
+        """DSN реплики для sync — независимо от default-backend (env или secrets).
+
+        Поле secrets ``supabase_db_url`` — ЛЕГАСИ-имя (его читают и server_checker): с E12
+        (2026-06-14) указывает на self-host PostgreSQL (WEECERE), а не на облачный Supabase.
+        Имя поля не переименовываем намеренно — оно кросс-репо; смысл — «DSN облачной/self-host реплики».
+        """
         return _env("TIMECHECKER_DB_URL", None) or self.read_wgp_secrets().get("supabase_db_url")
 
     def validate(self) -> list[str]:

@@ -50,9 +50,28 @@ def test_session_dsn_switches_pooler_port():
     assert sess.endswith("?sslmode=require")
 
 
-def test_session_dsn_noop_when_not_6543():
+def test_session_dsn_noop_when_not_6543(monkeypatch):
+    monkeypatch.delenv("DB_SESSION_DBNAME", raising=False)
     direct = "postgresql://postgres:pw@db.example.supabase.co:5432/postgres"
     assert _session_dsn(direct) == direct
+
+
+def test_session_dsn_selfhost_session_db(monkeypatch):
+    """self-host (E12): порт не 6543, но DB_SESSION_DBNAME → переключить на session-логическую БД
+    тем же портом (PgBouncer), а не хардкодом :5432. Хост/порт/пароль/query целы."""
+    monkeypatch.setenv("DB_SESSION_DBNAME", "postgres_session")
+    dsn = "postgresql://app:pw@185.221.22.174:6432/postgres?sslmode=verify-ca"
+    sess = _session_dsn(dsn)
+    assert "/postgres_session" in sess and ":6432" in sess and ":5432" not in sess
+    assert "app:pw@185.221.22.174" in sess
+    assert sess.endswith("?sslmode=verify-ca")
+
+
+def test_session_dsn_selfhost_noop_without_optin(monkeypatch):
+    """self-host без явного opt-in DB_SESSION_DBNAME → DSN не трогаем."""
+    monkeypatch.delenv("DB_SESSION_DBNAME", raising=False)
+    dsn = "postgresql://app:pw@185.221.22.174:6432/postgres?sslmode=verify-ca"
+    assert _session_dsn(dsn) == dsn
 
 
 def test_setup_bot_role_rejects_weak_password():

@@ -127,11 +127,11 @@ def _cmd_deploy(args: argparse.Namespace, cfg: Config) -> int:
     rc2 = register_daily_task("timechecker-report", f'"{exe}" daily', args.report_at)
     rc3 = 0
     has_cloud = bool(cfg.supabase_dsn())
-    if has_cloud:  # local-first: collect/metrics/report → SQLite, sync → Supabase
+    if has_cloud:  # local-first: collect/metrics/report → SQLite, sync → реплика (self-host)
         rc3 = register_task("timechecker-sync", f'"{exe}" sync', args.sync_every)
     rc4 = register_weekly_task("timechecker-pricing-refresh", f'"{exe}" pricing-refresh')
     log.info("deploy rc: collect=%s daily=%s sync=%s pricing=%s | exe=%s", rc1, rc2, rc3, rc4, exe)
-    log.info("deploy: SQLite-агент + sync→Supabase + pricing weekly. Проверь 'health'.")
+    log.info("deploy: SQLite-агент + sync→реплика (self-host) + pricing weekly. Проверь 'health'.")
     return 0 if rc1 == 0 and rc2 == 0 and rc3 == 0 and rc4 == 0 else 1
 
 
@@ -236,7 +236,7 @@ def _cmd_migrate_db(args: argparse.Namespace, cfg: Config) -> int:
 def _cmd_sync(args: argparse.Namespace, cfg: Config) -> int:
     dsn = cfg.supabase_dsn()
     if not dsn:
-        log.error("sync: нет Supabase DSN (supabase_db_url в secrets / TIMECHECKER_DB_URL)")
+        log.error("sync: нет DSN реплики (supabase_db_url [legacy-имя] в secrets / TIMECHECKER_DB_URL)")
         return 1
     from .storage.postgres_repository import PostgresRepository
     from .storage.sync import sync_to_postgres
@@ -245,7 +245,7 @@ def _cmd_sync(args: argparse.Namespace, cfg: Config) -> int:
     try:
         counts = sync_to_postgres(src, dst, full=args.full, reset=args.reset,
                                   lookback_days=cfg.collect_lookback_days)
-        log.info("sync → Supabase: %s", counts)
+        log.info("sync → реплика (self-host): %s", counts)
     finally:
         src.close()
         dst.close()
@@ -373,9 +373,9 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("--prefix", default=None, help="префикс readable-ID задач (напр. TIME)")
     sub.add_parser("projects", help="Список привязанных проектов")
     sub.add_parser("migrate-db", help="Перенести данные SQLite → Postgres (по db_url)")
-    sync_p = sub.add_parser("sync", help="Реплицировать SQLite → Supabase (инкрементально)")
+    sync_p = sub.add_parser("sync", help="Реплицировать SQLite → реплику (self-host, инкрементально)")
     sync_p.add_argument("--full", action="store_true", help="полная репликация (все строки)")
-    sync_p.add_argument("--reset", action="store_true", help="TRUNCATE Supabase + ресед")
+    sync_p.add_argument("--reset", action="store_true", help="TRUNCATE реплики + ресед")
     sub.add_parser("pricing-refresh", help="Обновить ставки токенов из LiteLLM")
     sbr = sub.add_parser(
         "setup-bot-role",
