@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from urllib.parse import urlsplit, urlunsplit
 
@@ -50,23 +51,33 @@ _PASSWORD_RE = re.compile(r"^[A-Za-z0-9]{24,}$")
 
 
 def _session_dsn(admin_dsn: str) -> str:
-    """Переключить DSN на session-pooler (6543 → 5432) для role/grant-DDL; иначе вернуть как есть.
+    """Переключить DSN на session-режим для role/grant-DDL (на transaction-pooler
+    последовательные стейтменты ложатся на случайные backend'ы → advisory-lock/DDL текут).
 
-    Реконструируем netloc из разобранных частей (а не строковой заменой ':6543'), чтобы случайное
-    совпадение в пароле не сломало порт.
+    - Supabase Supavisor: порт 6543 (transaction) → 5432 (session).
+    - self-host PgBouncer (E12): порт единый, session — это отдельная логическая БД;
+      переключаем через ЯВНЫЙ opt-in env ``DB_SESSION_DBNAME`` (паттерн nexus_admin/server_checker
+      conn.mjs), а не хардкодом порта. Если admin_dsn уже на session-БД — фактический no-op.
+    - иначе вернуть как есть.
+
+    Реконструируем netloc/path из разобранных частей (а не строковой заменой), чтобы случайное
+    совпадение в пароле/хосте не сломало DSN.
     """
     parts = urlsplit(admin_dsn)
-    if parts.port != 6543:
-        return admin_dsn
-    host = parts.hostname or ""
-    auth = ""
-    if parts.username:
-        auth = parts.username
-        if parts.password:
-            auth += f":{parts.password}"
-        auth += "@"
-    netloc = f"{auth}{host}:5432"
-    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    if parts.port == 6543:                                    # Supabase Supavisor: txn→session порт
+        host = parts.hostname or ""
+        auth = ""
+        if parts.username:
+            auth = parts.username
+            if parts.password:
+                auth += f":{parts.password}"
+            auth += "@"
+        netloc = f"{auth}{host}:5432"
+        return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
+    session_db = os.environ.get("DB_SESSION_DBNAME")          # self-host: явный opt-in на session-БД
+    if session_db:
+        return urlunsplit((parts.scheme, parts.netloc, f"/{session_db}", parts.query, parts.fragment))
+    return admin_dsn
 
 
 def build_bot_dsn(admin_dsn: str, password: str, *, role: str = ROLE) -> str:
